@@ -24,6 +24,7 @@ xcap = "0.0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }
 arboard = "3.4"
 winreg = "0.55"
+gif = "0.13"
 windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_Foundation",

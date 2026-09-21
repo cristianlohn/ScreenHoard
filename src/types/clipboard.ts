@@ -6,7 +6,7 @@
 /**
  * Tipos de itens suportados no histórico da área de transferência.
  */
-export type ClipboardItemType = 'text' | 'image' | 'link' | 'color';
+export type ClipboardItemType = 'text' | 'image' | 'link' | 'color' | 'code';
 
 /**
  * Metadados contextuais associados a um item do clipboard.
@@ -23,6 +23,10 @@ export interface ClipboardItemMetadata {
   size_bytes?: number;
   /** Formato de arquivo da mídia persistida (ex: "png", "webp") */
   file_format?: string;
+  /** Formato da mídia ou gravação (ex: "gif", "png", "webp") */
+  format?: string;
+  /** Duração em segundos para gravações de GIF */
+  duration_secs?: number;
   /** Quantidade de caracteres para itens do tipo 'text' ou 'link' */
   char_count?: number;
   /** Quantidade de linhas para snippets de texto */
@@ -41,6 +45,8 @@ export interface ClipboardItem {
   id: string;
   /** Tipo de dado do item */
   type: ClipboardItemType;
+  /** Título / apelido personalizado do item (v0.2.0) */
+  title?: string | null;
   /** Conteúdo bruto em texto ou caminho relativo do arquivo em disco (para imagens) */
   content: string | null;
   /** Caminho relativo da thumbnail gerada ou texto resumido/sanitizado */
@@ -74,8 +80,12 @@ export interface AppSettings {
   screenshot_trigger: string;
   /** Gatilho para abrir/fechar modal (Padrão: "Mouse5") */
   toggle_modal_trigger: string;
+  /** Dias de retenção automática (ex: "7", "30", "0") */
+  auto_clear_days?: string;
+  /** Duração máxima de gravação de GIF em segundos (ex: "15", "30") */
+  gif_max_duration?: string | number;
   /** Configurações dinâmicas adicionais */
-  [key: string]: string;
+  [key: string]: string | number | undefined;
 }
 
 /* ==========================================================================

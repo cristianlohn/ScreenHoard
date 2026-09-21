@@ -1,12 +1,16 @@
 import React from 'react';
 import {
-  Search,
-  X,
+  Clipboard,
   Image as ImageIcon,
   FileText,
+  Code,
+  Link as LinkIcon,
   Pin,
   Settings,
-  Layers,
+  Search,
+  X,
+  Video,
+  Square,
 } from 'lucide-react';
 import type { FilterTab } from '@/hooks/useClipboardHistory';
 
@@ -19,11 +23,18 @@ interface SearchBarProps {
     all: number;
     image: number;
     text: number;
+    code: number;
+    link: number;
     pinned: number;
   };
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  isRecording?: boolean;
+  recordingDuration?: number;
+  maxRecordingDuration?: number;
+  onStartRecording?: () => void;
+  onStopRecording?: () => void;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({
@@ -35,143 +46,188 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   isSettingsOpen,
   onToggleSettings,
   inputRef,
+  isRecording = false,
+  recordingDuration = 0,
+  maxRecordingDuration = 15,
+  onStartRecording,
+  onStopRecording,
 }) => {
+  const formatDuration = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   return (
-    <header className="flex flex-col gap-2 p-3 pb-2 border-b border-white/10 bg-zinc-950/40 select-none">
-      {/* Mini Badge / Logomarca Elegante */}
-      <div className="flex items-center justify-between px-0.5">
-        <div className="flex items-center gap-1.5">
+    <header className="flex flex-col gap-2 p-2.5 pb-2 border-b border-white/10 bg-zinc-950/40 select-none">
+      {/* Top Header: Brand Badge + Navigation Icons */}
+      <div className="flex items-center justify-between gap-1">
+        {/* Brand Mini Badge */}
+        <div className="flex items-center gap-1.5 pl-0.5 flex-shrink-0">
           <img
             src="/icon.png"
             alt="ScreenHoard"
-            className="w-3.5 h-3.5 rounded-sm object-cover shadow-sm shadow-violet-500/20"
+            className="w-4 h-4 rounded-md object-cover shadow-sm shadow-violet-500/20"
           />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400 font-semibold text-xs tracking-wide">
+          <span
+            className={`text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400 font-semibold text-xs tracking-wide ${
+              isRecording ? 'hidden' : 'inline'
+            }`}
+          >
             ScreenHoard
           </span>
         </div>
-        <span className="text-[10px] text-zinc-500 font-mono">v0.1.0</span>
-      </div>
 
-      {/* Barra de Busca + Botão de Configurações */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 flex items-center">
-          <Search className="absolute left-3 w-4 h-4 text-zinc-400 pointer-events-none" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Buscar por texto, app de origem ou metadados..."
-            className="w-full pl-9 pr-8 py-2 text-xs text-zinc-100 placeholder-zinc-500 rounded-lg glass-input focus:outline-none transition-all"
-            autoComplete="off"
-            spellCheck={false}
+        {/* Barra de Categorias e Ícones Minimalistas */}
+        <div className="flex items-center gap-1">
+          <NavIconButton
+            active={activeFilter === 'all'}
+            onClick={() => onFilterChange('all')}
+            title={`Todos (${counts.all})`}
+            icon={<Clipboard className="w-3.5 h-3.5" />}
           />
-          {query && (
+          <NavIconButton
+            active={activeFilter === 'image'}
+            onClick={() => onFilterChange('image')}
+            title={`Imagens (${counts.image})`}
+            icon={<ImageIcon className="w-3.5 h-3.5" />}
+          />
+          <NavIconButton
+            active={activeFilter === 'text'}
+            onClick={() => onFilterChange('text')}
+            title={`Textos (${counts.text})`}
+            icon={<FileText className="w-3.5 h-3.5" />}
+          />
+          <NavIconButton
+            active={activeFilter === 'code'}
+            onClick={() => onFilterChange('code')}
+            title={`Código (${counts.code})`}
+            icon={<Code className="w-3.5 h-3.5" />}
+          />
+          <NavIconButton
+            active={activeFilter === 'link'}
+            onClick={() => onFilterChange('link')}
+            title={`Links (${counts.link})`}
+            icon={<LinkIcon className="w-3.5 h-3.5" />}
+          />
+          <NavIconButton
+            active={activeFilter === 'pinned'}
+            onClick={() => onFilterChange('pinned')}
+            title={`Fixados (${counts.pinned})`}
+            icon={<Pin className="w-3.5 h-3.5" />}
+          />
+
+          <div className="w-[1px] h-3.5 bg-white/10 mx-0.5" />
+
+          {/* Botão de Gravação Nativa de GIF */}
+          {isRecording ? (
+            <div className="flex items-center gap-1">
+              <div
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-500/20 border border-red-500/40 text-[10px] font-mono text-red-300 animate-pulse select-none"
+                title={`Gravando GIF (Máx: ${maxRecordingDuration}s)`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block animate-ping" />
+                <span className="font-semibold">
+                  REC {formatDuration(recordingDuration)} / {formatDuration(maxRecordingDuration)}
+                </span>
+              </div>
+              <button
+                onClick={onStopRecording}
+                tabIndex={-1}
+                title="Concluir e Salvar GIF (Stop)"
+                className="p-1 rounded-md bg-red-600 hover:bg-red-500 text-white shadow-sm shadow-red-600/30 transition-all flex items-center justify-center"
+              >
+                <Square className="w-3 h-3 fill-current" />
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={() => {
-                onQueryChange('');
-                inputRef.current?.focus();
-              }}
+              onClick={onStartRecording}
               tabIndex={-1}
-              className="absolute right-2.5 p-0.5 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-              title="Limpar busca"
+              title="Gravar GIF de Tela"
+              className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-pink-300 hover:bg-pink-500/10 hover:border-pink-500/30 border-transparent"
             >
-              <X className="w-3.5 h-3.5" />
+              <Video className="w-3.5 h-3.5" />
             </button>
           )}
-        </div>
 
-        {/* Botão de Configurações */}
-        <button
-          onClick={onToggleSettings}
-          tabIndex={-1}
-          className={`p-2 rounded-lg border transition-all flex items-center justify-center ${
-            isSettingsOpen
-              ? 'bg-blue-600/30 text-blue-300 border-blue-500/40 shadow-sm shadow-blue-500/20'
-              : 'bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 border-white/10'
-          }`}
-          title="Configurações de Atalhos"
-        >
-          <Settings
-            className={`w-4 h-4 transition-transform duration-200 ${
-              isSettingsOpen ? 'rotate-45' : ''
+          {/* Botão de Configurações */}
+          <button
+            onClick={onToggleSettings}
+            tabIndex={-1}
+            title="Configurações & Atalhos"
+            className={`p-1.5 rounded-md border transition-all flex items-center justify-center ${
+              isSettingsOpen
+                ? 'bg-violet-600/30 text-violet-200 border-violet-500/40 shadow-sm shadow-violet-500/20'
+                : 'bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border-transparent'
             }`}
-          />
-        </button>
+          >
+            <Settings
+              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                isSettingsOpen ? 'rotate-45' : ''
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
-      {/* Chips de Filtro Rápido */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
-        <FilterChip
-          active={activeFilter === 'all'}
-          onClick={() => onFilterChange('all')}
-          label="Todos"
-          icon={<Layers className="w-3.5 h-3.5" />}
-          count={counts.all}
+      {/* Campo de Busca Estilizado "Filtrar por nome ou conteúdo..." */}
+      <div className="relative flex items-center">
+        <Search className="absolute left-2.5 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Filtrar por nome ou conteúdo..."
+          className="w-full pl-8 pr-7 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 rounded-lg glass-input focus:outline-none transition-all"
+          autoComplete="off"
+          spellCheck={false}
+          autoFocus
         />
-        <FilterChip
-          active={activeFilter === 'image'}
-          onClick={() => onFilterChange('image')}
-          label="Imagens"
-          icon={<ImageIcon className="w-3.5 h-3.5" />}
-          count={counts.image}
-        />
-        <FilterChip
-          active={activeFilter === 'text'}
-          onClick={() => onFilterChange('text')}
-          label="Textos"
-          icon={<FileText className="w-3.5 h-3.5" />}
-          count={counts.text}
-        />
-        <FilterChip
-          active={activeFilter === 'pinned'}
-          onClick={() => onFilterChange('pinned')}
-          label="Fixados"
-          icon={<Pin className="w-3.5 h-3.5" />}
-          count={counts.pinned}
-        />
+        {query && (
+          <button
+            onClick={() => {
+              onQueryChange('');
+              inputRef.current?.focus();
+            }}
+            tabIndex={-1}
+            className="absolute right-2 p-0.5 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            title="Limpar busca"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
       </div>
     </header>
   );
 };
 
-interface FilterChipProps {
+interface NavIconButtonProps {
   active: boolean;
   onClick: () => void;
-  label: string;
-  icon?: React.ReactNode;
-  count: number;
+  title: string;
+  icon: React.ReactNode;
 }
 
-const FilterChip: React.FC<FilterChipProps> = ({
+const NavIconButton: React.FC<NavIconButtonProps> = ({
   active,
   onClick,
-  label,
+  title,
   icon,
-  count,
 }) => {
   return (
     <button
       onClick={onClick}
       tabIndex={-1}
-      className={`px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-all flex-shrink-0 text-[11px] font-medium ${
+      title={title}
+      className={`p-1.5 rounded-md border transition-all flex items-center justify-center flex-shrink-0 ${
         active
-          ? 'bg-blue-600/30 text-blue-200 border border-blue-500/40 shadow-sm shadow-blue-500/20'
-          : 'bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border border-transparent'
+          ? 'bg-violet-600/30 text-violet-200 border-violet-500/40 shadow-sm shadow-violet-500/20'
+          : 'bg-zinc-900/30 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'
       }`}
     >
       {icon}
-      <span>{label}</span>
-      <span
-        className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-          active
-            ? 'bg-blue-500/30 text-blue-200'
-            : 'bg-zinc-800/80 text-zinc-500'
-        }`}
-      >
-        {count}
-      </span>
     </button>
   );
 };

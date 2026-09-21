@@ -240,7 +240,7 @@ pub fn toggle_main_modal(app_handle: &AppHandle) {
             // 3. Obter tamanho da janela e calcular centro do monitor ativo
             let win_size = window
                 .outer_size()
-                .unwrap_or(tauri::PhysicalSize { width: 720, height: 480 });
+                .unwrap_or(tauri::PhysicalSize { width: 380, height: 660 });
 
             let center_x = mon_x + (mon_w - win_size.width as i32) / 2;
             let center_y = mon_y + (mon_h - win_size.height as i32) / 2;

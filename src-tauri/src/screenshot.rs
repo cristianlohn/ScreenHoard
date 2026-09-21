@@ -106,6 +106,7 @@ pub fn capture_active_screen(
     let new_item = NewClipboardItem {
         id: file_id.clone(),
         item_type: "image".to_string(),
+        title: None,
         content: Some(rel_path.clone()),
         preview_url: Some(rel_path),
         metadata: Some(serde_json::json!({

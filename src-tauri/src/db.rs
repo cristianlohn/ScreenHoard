@@ -11,6 +11,7 @@ pub struct ClipboardItem {
     pub id: String,
     #[serde(rename = "type")]
     pub item_type: String,
+    pub title: Option<String>,
     pub content: Option<String>,
     pub preview_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -24,6 +25,7 @@ pub struct NewClipboardItem {
     pub id: String,
     #[serde(rename = "type")]
     pub item_type: String,
+    pub title: Option<String>,
     pub content: Option<String>,
     pub preview_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -96,6 +98,7 @@ pub fn init_storage_and_db() -> Result<Connection, Box<dyn std::error::Error>> {
         "CREATE TABLE IF NOT EXISTS clipboard_items (
             id TEXT PRIMARY KEY,
             type TEXT NOT NULL CHECK(type IN ('text', 'image', 'link', 'color')),
+            title TEXT,
             content TEXT,
             preview_url TEXT,
             metadata JSON,
@@ -111,6 +114,23 @@ pub fn init_storage_and_db() -> Result<Connection, Box<dyn std::error::Error>> {
             value TEXT NOT NULL
         );",
     )?;
+
+    // Migração automática: verifica se a coluna 'title' existe em clipboard_items
+    let mut has_title_col = false;
+    {
+        let mut pragma_stmt = conn.prepare("PRAGMA table_info(clipboard_items);")?;
+        let mut rows = pragma_stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let col_name: String = row.get(1)?;
+            if col_name == "title" {
+                has_title_col = true;
+                break;
+            }
+        }
+    }
+    if !has_title_col {
+        conn.execute("ALTER TABLE clipboard_items ADD COLUMN title TEXT;", [])?;
+    }
 
     // Inserção dos valores padrão de fábrica se não existirem
     conn.execute(
@@ -140,11 +160,12 @@ pub fn insert_clipboard_item(
         .map(|m| serde_json::to_string(m).unwrap_or_default());
 
     conn.execute(
-        "INSERT INTO clipboard_items (id, type, content, preview_url, metadata, is_pinned, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO clipboard_items (id, type, title, content, preview_url, metadata, is_pinned, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             item.id,
             item.item_type,
+            item.title,
             item.content,
             item.preview_url,
             metadata_str,
@@ -156,6 +177,7 @@ pub fn insert_clipboard_item(
     Ok(ClipboardItem {
         id: item.id.clone(),
         item_type: item.item_type.clone(),
+        title: item.title.clone(),
         content: item.content.clone(),
         preview_url: item.preview_url.clone(),
         metadata: item.metadata.clone(),
@@ -170,7 +192,7 @@ pub fn list_clipboard_items(
     filter: &GetHistoryFilter,
 ) -> Result<Vec<ClipboardItem>, rusqlite::Error> {
     let mut sql = String::from(
-        "SELECT id, type, content, preview_url, metadata, is_pinned, created_at
+        "SELECT id, type, title, content, preview_url, metadata, is_pinned, created_at
          FROM clipboard_items WHERE 1=1",
     );
     let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -188,12 +210,13 @@ pub fn list_clipboard_items(
         }
     }
 
-    // Busca textual no conteúdo e metadados
+    // Busca textual no título, conteúdo e metadados
     if let Some(ref q) = filter.query {
         let trimmed = q.trim();
         if !trimmed.is_empty() {
-            sql.push_str(" AND (content LIKE ? OR metadata LIKE ?)");
+            sql.push_str(" AND (title LIKE ? OR content LIKE ? OR metadata LIKE ?)");
             let pattern = format!("%{}%", trimmed);
+            params_vec.push(Box::new(pattern.clone()));
             params_vec.push(Box::new(pattern.clone()));
             params_vec.push(Box::new(pattern));
         }
@@ -212,17 +235,18 @@ pub fn list_clipboard_items(
     let params_slice: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
 
     let items_iter = stmt.query_map(params_slice.as_slice(), |row| {
-        let metadata_raw: Option<String> = row.get(4)?;
+        let metadata_raw: Option<String> = row.get(5)?;
         let metadata_val = metadata_raw.and_then(|s| serde_json::from_str(&s).ok());
 
         Ok(ClipboardItem {
             id: row.get(0)?,
             item_type: row.get(1)?,
-            content: row.get(2)?,
-            preview_url: row.get(3)?,
+            title: row.get(2)?,
+            content: row.get(3)?,
+            preview_url: row.get(4)?,
             metadata: metadata_val,
-            is_pinned: row.get(5)?,
-            created_at: row.get(6)?,
+            is_pinned: row.get(6)?,
+            created_at: row.get(7)?,
         })
     })?;
 
@@ -232,6 +256,24 @@ pub fn list_clipboard_items(
     }
 
     Ok(result)
+}
+
+/// Atualiza o título/apelido de um item no banco de dados.
+pub fn rename_clipboard_item(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+) -> Result<(), rusqlite::Error> {
+    let title_val = if title.trim().is_empty() {
+        None
+    } else {
+        Some(title.trim())
+    };
+    conn.execute(
+        "UPDATE clipboard_items SET title = ?1 WHERE id = ?2",
+        params![title_val, id],
+    )?;
+    Ok(())
 }
 
 /// Exclui um item pelo ID. Se for do tipo imagem, também remove o arquivo do disco.

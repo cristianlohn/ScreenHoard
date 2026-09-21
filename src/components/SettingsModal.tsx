@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Check,
   Power,
+  Video,
 } from 'lucide-react';
 import type { AppSettings } from '@/types/clipboard';
 
@@ -44,6 +45,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [screenshotTrigger, setScreenshotTrigger] = useState('Mouse4');
   const [toggleModalTrigger, setToggleModalTrigger] = useState('Mouse5');
   const [autoClearDays, setAutoClearDays] = useState('30');
+  const [gifMaxDuration, setGifMaxDuration] = useState('15');
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -61,6 +63,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           }
           if (settings.auto_clear_days) {
             setAutoClearDays(settings.auto_clear_days);
+          }
+          if (settings.gif_max_duration) {
+            setGifMaxDuration(String(settings.gif_max_duration));
           }
         })
         .catch((err) => {
@@ -93,6 +98,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         action: 'auto_clear_days',
         trigger: autoClearDays,
       });
+      await invoke('set_shortcut_config', {
+        action: 'gif_max_duration',
+        trigger: gifMaxDuration,
+      });
       await invoke('set_autostart_enabled', {
         enabled: autostartEnabled,
       });
@@ -111,6 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setScreenshotTrigger('Mouse4');
     setToggleModalTrigger('Mouse5');
     setAutoClearDays('30');
+    setGifMaxDuration('15');
     setAutostartEnabled(true);
 
     try {
@@ -125,6 +135,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await invoke('set_shortcut_config', {
         action: 'auto_clear_days',
         trigger: '30',
+      });
+      await invoke('set_shortcut_config', {
+        action: 'gif_max_duration',
+        trigger: '15',
       });
       await invoke('set_autostart_enabled', {
         enabled: true,
@@ -264,6 +278,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="60" className="bg-zinc-900 text-zinc-100">60 dias</option>
               <option value="90" className="bg-zinc-900 text-zinc-100">90 dias</option>
               <option value="0" className="bg-zinc-900 text-zinc-100">Desativado (manter tudo)</option>
+            </select>
+          </div>
+
+          {/* Duração Máxima da Gravação de GIF */}
+          <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-zinc-900/40 border border-white/5">
+            <div className="flex items-center justify-between">
+              <label className="font-medium text-zinc-200 flex items-center gap-2">
+                <Video className="w-3.5 h-3.5 text-pink-400" />
+                Duração Máxima da Gravação de GIF
+              </label>
+              <span className="text-[10px] text-zinc-500">Padrão: 15s</span>
+            </div>
+            <p className="text-[11px] text-zinc-400">
+              Tempo limite automático para capturar a tela em GIF animado. A gravação pode ser interrompida a qualquer momento.
+            </p>
+            <select
+              value={gifMaxDuration}
+              onChange={(e) => setGifMaxDuration(e.target.value)}
+              className="mt-1 px-3 py-1.5 rounded-lg glass-input text-zinc-100 text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="5" className="bg-zinc-900 text-zinc-100">5 segundos</option>
+              <option value="10" className="bg-zinc-900 text-zinc-100">10 segundos</option>
+              <option value="15" className="bg-zinc-900 text-zinc-100">15 segundos (Padrão)</option>
+              <option value="30" className="bg-zinc-900 text-zinc-100">30 segundos</option>
+              <option value="60" className="bg-zinc-900 text-zinc-100">60 segundos</option>
             </select>
           </div>
 

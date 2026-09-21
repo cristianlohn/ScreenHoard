@@ -3,6 +3,7 @@ pub mod cleaner;
 pub mod clipboard_listener;
 pub mod db;
 pub mod hooks;
+pub mod recorder;
 pub mod screenshot;
 pub mod tray;
 
@@ -97,6 +98,9 @@ fn copy_item_to_clipboard(state: State<'_, AppState>, id: String) -> Result<(), 
     } else if let Some(text) = item.content {
         let mut clipboard = arboard::Clipboard::new()
             .map_err(|e| format!("Erro ao acessar área de transferência: {e}"))?;
+        // Evita auto-captura de texto no listener de clipboard
+        clipboard_listener::set_ignore_next_update(true);
+        clipboard_listener::record_last_text(&text);
         clipboard
             .set_text(text)
             .map_err(|e| format!("Erro ao copiar texto para o clipboard: {e}"))?;
@@ -109,6 +113,19 @@ fn copy_item_to_clipboard(state: State<'_, AppState>, id: String) -> Result<(), 
 #[tauri::command]
 fn copy_item(state: State<'_, AppState>, id: String) -> Result<(), String> {
     copy_item_to_clipboard(state, id)
+}
+
+/// Copia um texto arbitrário para a área de transferência com supressão de auto-captura.
+#[tauri::command]
+fn copy_text_to_clipboard(text: String) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|e| format!("Erro ao acessar área de transferência: {e}"))?;
+    clipboard_listener::set_ignore_next_update(true);
+    clipboard_listener::record_last_text(&text);
+    clipboard
+        .set_text(text)
+        .map_err(|e| format!("Erro ao copiar texto para o clipboard: {e}"))?;
+    Ok(())
 }
 
 /// Exclui um item pelo ID e apaga a mídia correspondente em disco se for imagem.
@@ -141,6 +158,20 @@ fn toggle_item_pin(state: State<'_, AppState>, id: String) -> Result<bool, Strin
 #[tauri::command]
 fn toggle_pin(state: State<'_, AppState>, id: String) -> Result<bool, String> {
     toggle_item_pin(state, id)
+}
+
+/// Atualiza o título/apelido personalizado de um item no histórico.
+#[tauri::command]
+fn rename_clipboard_item(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+) -> Result<(), String> {
+    let conn = state
+        .db
+        .lock()
+        .map_err(|e| format!("Falha de lock no banco de dados: {e}"))?;
+    db::rename_clipboard_item(&conn, &id, &title).map_err(|e| format!("Erro ao renomear item: {e}"))
 }
 
 /// Oculta a janela principal do modal.
@@ -209,6 +240,30 @@ fn capture_screen(
 #[tauri::command]
 fn get_app_data_dir() -> Result<String, String> {
     Ok(db::get_app_dir().to_string_lossy().to_string())
+}
+
+/// Inicia a gravação de tela em GIF.
+#[tauri::command]
+fn start_screen_recording(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    max_seconds: Option<u32>,
+) -> Result<(), String> {
+    let duration = max_seconds.unwrap_or(15);
+    recorder::start_gif_recording(app_handle, state.db.clone(), duration)
+}
+
+/// Encerra a gravação de tela em GIF.
+#[tauri::command]
+fn stop_screen_recording() -> Result<(), String> {
+    recorder::stop_gif_recording();
+    Ok(())
+}
+
+/// Consulta se a gravação de tela em GIF está ativa.
+#[tauri::command]
+fn is_recording_active() -> bool {
+    recorder::is_recording_active()
 }
 
 /// Consulta se a inicialização com o Windows está ativa.
@@ -281,14 +336,19 @@ pub fn run() {
             get_history,
             copy_item_to_clipboard,
             copy_item,
+            copy_text_to_clipboard,
             delete_clipboard_item,
             delete_item,
             toggle_item_pin,
             toggle_pin,
+            rename_clipboard_item,
             hide_modal_window,
             get_shortcuts_config,
             set_shortcut_config,
             capture_screen,
+            start_screen_recording,
+            stop_screen_recording,
+            is_recording_active,
             get_app_data_dir,
             is_autostart_enabled,
             set_autostart_enabled,

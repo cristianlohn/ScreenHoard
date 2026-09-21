@@ -1,8 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import {
-  useClipboardHistory,
-} from '@/hooks/useClipboardHistory';
+import { useClipboardHistory } from '@/hooks/useClipboardHistory';
 import { SearchBar } from '@/components/SearchBar';
 import { ClipboardCard } from '@/components/ClipboardCard';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -22,13 +20,20 @@ export const App: React.FC = () => {
     setIsSettingsOpen,
     copyingItemId,
     copyItem,
+    renameItem,
     togglePin,
     deleteItem,
     counts,
+    isRecording,
+    recordingDuration,
+    maxRecordingDuration,
+    startRecording,
+    stopRecording,
   } = useClipboardHistory();
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const cardsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [translateTargetId, setTranslateTargetId] = useState<string | null>(null);
 
   // Garante auto-foco na barra de busca ao iniciar e manter o padrão Spotlight
   useEffect(() => {
@@ -52,7 +57,7 @@ export const App: React.FC = () => {
     }
   }, [selectedIndex]);
 
-  // Navegação refinada por teclado (Spotlight: foco permanece no input de busca)
+  // Navegação linear por teclado (ArrowUp e ArrowDown percorrem a lista contínua)
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Se as configurações estiverem abertas, Esc fecha as configurações
     if (isSettingsOpen) {
@@ -65,27 +70,16 @@ export const App: React.FC = () => {
     }
 
     const total = filteredItems.length;
-    const cols = 2; // Grid de 2 colunas
 
     switch (e.key) {
-      case 'ArrowRight':
+      case 'ArrowDown':
         e.preventDefault();
         setSelectedIndex((prev) => (total > 0 ? Math.min(prev + 1, total - 1) : 0));
         break;
 
-      case 'ArrowLeft':
-        e.preventDefault();
-        setSelectedIndex((prev) => (total > 0 ? Math.max(prev - 1, 0) : 0));
-        break;
-
-      case 'ArrowDown':
-        e.preventDefault();
-        setSelectedIndex((prev) => (total > 0 ? Math.min(prev + cols, total - 1) : 0));
-        break;
-
       case 'ArrowUp':
         e.preventDefault();
-        setSelectedIndex((prev) => (total > 0 ? Math.max(prev - cols, 0) : 0));
+        setSelectedIndex((prev) => (total > 0 ? Math.max(prev - 1, 0) : 0));
         break;
 
       case 'Enter':
@@ -124,6 +118,19 @@ export const App: React.FC = () => {
         }
         break;
 
+      case 't':
+      case 'T':
+        // Dispara tradução do item ativo se for texto/código
+        if (
+          filteredItems[selectedIndex] &&
+          filteredItems[selectedIndex].type !== 'image' &&
+          (searchQuery === '' || e.altKey || e.ctrlKey)
+        ) {
+          e.preventDefault();
+          setTranslateTargetId(filteredItems[selectedIndex].id);
+        }
+        break;
+
       default:
         break;
     }
@@ -134,8 +141,8 @@ export const App: React.FC = () => {
       onKeyDown={handleKeyDown}
       className="w-screen h-screen p-2 select-none flex items-center justify-center bg-transparent overflow-hidden"
     >
-      <div className="relative w-full h-full max-w-[720px] max-h-[480px] rounded-2xl glass-panel border border-white/10 shadow-2xl flex flex-col overflow-hidden">
-        {/* Barra de Busca + Chips de Filtro */}
+      <div className="relative w-full h-full max-w-[380px] max-h-[660px] rounded-2xl glass-panel border border-white/10 shadow-2xl flex flex-col overflow-hidden">
+        {/* Barra Superior de Ícones + Busca Spotlight */}
         <SearchBar
           inputRef={searchInputRef}
           query={searchQuery}
@@ -145,43 +152,51 @@ export const App: React.FC = () => {
           counts={counts}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen(!isSettingsOpen)}
+          isRecording={isRecording}
+          recordingDuration={recordingDuration}
+          maxRecordingDuration={maxRecordingDuration}
+          onStartRecording={() => startRecording()}
+          onStopRecording={stopRecording}
         />
 
-        {/* Área Central: Grid de Cards com Rolagem Suave */}
+        {/* Área Central: Lista Vertical Fluida de Cards */}
         <div
           ref={cardsContainerRef}
-          className="flex-1 p-3 overflow-y-auto overflow-x-hidden focus:outline-none"
+          className="flex-1 p-2.5 overflow-y-auto overflow-x-hidden focus:outline-none"
           tabIndex={-1}
         >
           {isLoading ? (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-zinc-500">
-              <Layers className="w-6 h-6 animate-pulse text-blue-400" />
+            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-zinc-500 py-16">
+              <Layers className="w-6 h-6 animate-pulse text-violet-400" />
               <span className="text-xs">Carregando histórico...</span>
             </div>
           ) : filteredItems.length === 0 ? (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-zinc-500 py-12">
+            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-zinc-500 py-20 text-center px-4">
               <Layers className="w-8 h-8 stroke-1 text-zinc-600" />
-              <p className="text-xs font-medium text-zinc-400">
+              <p className="text-xs font-medium text-zinc-300">
                 Nenhum item encontrado
               </p>
-              <p className="text-[11px] text-zinc-600">
+              <p className="text-[11px] text-zinc-500">
                 {searchQuery
-                  ? 'Tente ajustar os termos de busca ou mudar de aba.'
-                  : 'Capture uma tela com Mouse 4 para preencher seu histórico.'}
+                  ? 'Tente ajustar os termos da busca.'
+                  : 'Capture uma tela com Mouse 4 ou copie um texto para preencher seu histórico.'}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2.5 pb-2">
+            <div className="flex flex-col gap-2 pb-2">
               {filteredItems.map((item, index) => (
                 <div key={item.id} data-card-index={index}>
                   <ClipboardCard
                     item={item}
                     isSelected={index === selectedIndex}
                     isCopying={copyingItemId === item.id}
+                    isTranslateRequested={translateTargetId === item.id}
+                    onTranslationHandled={() => setTranslateTargetId(null)}
                     onSelect={() => setSelectedIndex(index)}
                     onCopy={() => copyItem(item.id)}
                     onTogglePin={(e) => togglePin(item.id, e)}
                     onDelete={(e) => deleteItem(item.id, e)}
+                    onRename={renameItem}
                   />
                 </div>
               ))}
@@ -189,46 +204,51 @@ export const App: React.FC = () => {
           )}
         </div>
 
-        {/* Rodapé Informativo com Dicas de Atalhos */}
-        <footer className="flex items-center justify-between px-3.5 py-1.5 border-t border-white/10 bg-zinc-950/60 text-[10px] text-zinc-400 select-none">
-          <div className="flex items-center gap-3">
+        {/* Rodapé Compacto com Dicas de Atalhos */}
+        <footer className="flex items-center justify-between px-3 py-1.5 border-t border-white/10 bg-zinc-950/60 text-[10px] text-zinc-400 select-none flex-shrink-0">
+          <div className="flex items-center gap-2">
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px] flex items-center gap-0.5">
-                <CornerDownLeft className="w-2.5 h-2.5" />
+              <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px] flex items-center gap-0.5">
+                <CornerDownLeft className="w-2 h-2" />
                 Enter
               </kbd>
               Copiar
             </span>
 
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
-                ↑ ↓ ← →
+              <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
+                ↑↓
               </kbd>
               Navegar
             </span>
 
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
+              <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
+                T
+              </kbd>
+              Traduzir
+            </span>
+
+            <span className="flex items-center gap-1">
+              <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
                 P
               </kbd>
               Fixar
             </span>
 
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
+              <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
                 Del
               </kbd>
               Excluir
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-zinc-500">
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-400 font-mono text-[9px]">
-                Esc
-              </kbd>
-              Ocultar
-            </span>
+          <div className="flex items-center gap-1 text-zinc-500">
+            <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-400 font-mono text-[9px]">
+              Esc
+            </kbd>
+            Fechar
           </div>
         </footer>
 
