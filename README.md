@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="app-icon.png" alt="ScreenHoard Logo" width="128" height="128" />
+</p>
+
 # 📋 ScreenHoard
 
 <p align="center">
@@ -175,6 +179,24 @@ npm run tauri build
 
 ---
 
+### 🎨 Identidade Visual e Ativos de Marca
+
+O **ScreenHoard** adota uma identidade visual moderna com estética *Dark Glassmorphism / Acrylic* e toques futuristas em gradiente de alta fidelidade:
+
+- **Paleta de Cores Primária:**
+  - **Violeta (`#A78BFA` / `from-violet-400`):** Representa criatividade, processamento em memória e inovação.
+  - **Ciano (`#22D3EE` / `to-cyan-400`):** Simboliza velocidade instantânea de captura, leveza e fluidez nativa.
+  - **Zinc Escuro (`#09090B` a `#27272A` / `bg-zinc-950` a `bg-zinc-800`):** Fundo translúcido com `backdrop-blur` profundo, em harmonia com o design Mica/Acrylic do Windows 11.
+
+- **Regeneração de Ícones da Aplicação:**
+  Os ícones nativos para Windows (ICO, PNGs em múltiplas resoluções para Store e Appx) e outros formatos são gerenciados via CLI do Tauri. Para regenerar todos os formatos a partir de uma nova imagem base em alta resolução (1024x1024):
+  ```bash
+  npx @tauri-apps/cli icon app-icon.png
+  ```
+  Isso atualizará automaticamente todos os ativos no diretório `src-tauri/icons/` e os favicons do frontend.
+
+---
+
 ### ❓ Solução de Problemas Comuns (Troubleshooting)
 
 #### 1. "cargo / rustc: comando não reconhecido" ou "Couldn't detect any Visual Studio"
@@ -338,6 +360,23 @@ npm run tauri build
 Os instaladores gerados estarão disponíveis em:
 - **NSIS (.exe):** `src-tauri/target/release/bundle/nsis/ScreenHoard_0.1.0_x64-setup.exe`
 - **MSI (.msi):** `src-tauri/target/release/bundle/msi/ScreenHoard_0.1.0_x64_en-US.msi`
+
+#### 🤖 Publicação Automatizada de Releases (CI/CD)
+
+O ScreenHoard conta com um fluxo de CI/CD automatizado via GitHub Actions configurado em `.github/workflows/release.yml`. Para gerar e publicar uma nova release oficial com os instaladores `.exe` e `.msi`:
+
+1. **Configuração Prévia no GitHub (Obrigatório):**
+   - Acesse o repositório no GitHub: **Settings** > **Actions** > **General**.
+   - Na seção **Workflow permissions**, selecione a opção **"Read and write permissions"** e salve.
+   - Isso concede a permissão necessária para o `tauri-action` criar releases e anexar os binários compilados.
+
+2. **Criar e Enviar a Tag de Versão:**
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+3. O runner `windows-latest` compilará o frontend, a toolchain Rust `x86_64-pc-windows-msvc` e publicará a Release oficial no GitHub contendo os instaladores NSIS (`.exe`) e MSI (`.msi`).
 
 ---
 

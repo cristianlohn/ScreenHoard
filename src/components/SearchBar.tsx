@@ -37,7 +37,22 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   inputRef,
 }) => {
   return (
-    <header className="flex flex-col gap-2.5 p-3 pb-2 border-b border-white/10 bg-zinc-950/40 select-none">
+    <header className="flex flex-col gap-2 p-3 pb-2 border-b border-white/10 bg-zinc-950/40 select-none">
+      {/* Mini Badge / Logomarca Elegante */}
+      <div className="flex items-center justify-between px-0.5">
+        <div className="flex items-center gap-1.5">
+          <img
+            src="/icon.png"
+            alt="ScreenHoard"
+            className="w-3.5 h-3.5 rounded-sm object-cover shadow-sm shadow-violet-500/20"
+          />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400 font-semibold text-xs tracking-wide">
+            ScreenHoard
+          </span>
+        </div>
+        <span className="text-[10px] text-zinc-500 font-mono">v0.1.0</span>
+      </div>
+
       {/* Barra de Busca + Botão de Configurações */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 flex items-center">

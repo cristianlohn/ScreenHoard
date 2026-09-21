@@ -140,17 +140,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-150 select-none">
       <div className="w-full max-w-lg rounded-2xl glass-panel border border-white/10 shadow-2xl overflow-hidden flex flex-col">
-        {/* Cabeçalho */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-zinc-950/40">
-          <div className="flex items-center gap-2">
-            <Mouse className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-semibold text-zinc-100">
-              Configurações de Atalhos & Sistema
-            </h2>
+        {/* Cabeçalho com Identidade Visual em Destaque */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-zinc-950/50">
+          <div className="flex items-center gap-3.5">
+            <img
+              src="/icon.png"
+              alt="ScreenHoard Logo"
+              className="w-12 h-12 rounded-xl border border-white/15 shadow-lg shadow-violet-500/10 object-cover flex-shrink-0"
+            />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">
+                  ScreenHoard
+                </h2>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  v0.1.0
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400">
+                Utilitário nativo de histórico de área de transferência e captura instantânea.
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 transition-colors flex-shrink-0"
+            title="Fechar configurações"
           >
             <X className="w-4 h-4" />
           </button>

@@ -1,0 +1,56 @@
+name: Release ScreenHoard
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar Rust Toolchain (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache de Dependências do Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Instalar Dependências do Frontend
+        run: npm install
+
+      - name: Build do Tauri e Criação Automática da Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'ScreenHoard ${{ github.ref_name }}'
+          releaseBody: |
+            ### 🚀 ScreenHoard ${{ github.ref_name }}
+            
+            Utilitário nativo de captura e histórico de clipboard para Windows.
+            
+            #### 📦 Arquivos para Download:
+            - **Instalador NSIS (.exe)**: Assistente padrão de instalação.
+            - **Instalador Windows (.msi)**: Pacote corporativo / Windows Installer.
+            
+            ---
+            *Compilado automaticamente via GitHub Actions.*
+          releaseDraft: false
+          prerelease: false
