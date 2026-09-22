@@ -9,8 +9,14 @@ import {
   Check,
   Power,
   Video,
+  Languages,
 } from 'lucide-react';
 import type { AppSettings } from '@/types/clipboard';
+import {
+  SUPPORTED_LANGUAGES,
+  getPreferredLanguage,
+  setPreferredLanguage,
+} from '@/services/translator';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -47,12 +53,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [autoClearDays, setAutoClearDays] = useState('30');
   const [gifMaxDuration, setGifMaxDuration] = useState('15');
   const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [preferredLanguage, setLocalPreferredLanguage] = useState(() => getPreferredLanguage());
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Carrega configurações persistidas no SQLite e registro
   useEffect(() => {
     if (isOpen) {
+      setLocalPreferredLanguage(getPreferredLanguage());
       invoke<AppSettings>('get_shortcuts_config')
         .then((settings) => {
           if (settings.screenshot_trigger) {
@@ -106,6 +114,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         enabled: autostartEnabled,
       });
 
+      setPreferredLanguage(preferredLanguage);
+
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
     } catch (err) {
@@ -122,6 +132,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setAutoClearDays('30');
     setGifMaxDuration('15');
     setAutostartEnabled(true);
+    setLocalPreferredLanguage('pt');
+    setPreferredLanguage('pt');
 
     try {
       await invoke('set_shortcut_config', {
@@ -303,6 +315,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="15" className="bg-zinc-900 text-zinc-100">15 segundos (Padrão)</option>
               <option value="30" className="bg-zinc-900 text-zinc-100">30 segundos</option>
               <option value="60" className="bg-zinc-900 text-zinc-100">60 segundos</option>
+            </select>
+          </div>
+
+          {/* Tradução e Idioma Preferido */}
+          <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-zinc-900/40 border border-white/5">
+            <div className="flex items-center justify-between">
+              <label className="font-medium text-zinc-200 flex items-center gap-2">
+                <Languages className="w-3.5 h-3.5 text-cyan-400" />
+                Tradução (Idioma de Destino Preferido)
+              </label>
+              <span className="text-[10px] text-zinc-500">1-Clique</span>
+            </div>
+            <p className="text-[11px] text-zinc-400">
+              Idioma padrão para onde textos dos cards serão traduzidos ao clicar em &quot;Traduzir&quot; caso a origem seja diferente.
+            </p>
+            <select
+              value={preferredLanguage}
+              onChange={(e) => setLocalPreferredLanguage(e.target.value)}
+              className="mt-1 px-3 py-1.5 rounded-lg glass-input text-zinc-100 text-xs focus:outline-none cursor-pointer"
+            >
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code} className="bg-zinc-900 text-zinc-100">
+                  {lang.flag} {lang.label} ({lang.code.toUpperCase()})
+                </option>
+              ))}
             </select>
           </div>
 

@@ -9,7 +9,7 @@ import {
   Sparkles,
   Loader2,
 } from 'lucide-react';
-import { translateText } from '@/services/translator';
+import { translateText, SUPPORTED_LANGUAGES, getPreferredLanguage } from '@/services/translator';
 
 interface QuickTranslateModalProps {
   isOpen: boolean;
@@ -23,7 +23,8 @@ export const QuickTranslateModal: React.FC<QuickTranslateModalProps> = ({
   initialText = '',
 }) => {
   const [inputText, setInputText] = useState(initialText);
-  const [targetLang, setTargetLang] = useState<'pt' | 'en' | undefined>(undefined);
+  const [sourceLang, setSourceLang] = useState<string>('auto');
+  const [targetLang, setTargetLang] = useState<string>(() => getPreferredLanguage());
   const [isTranslating, setIsTranslating] = useState(false);
   const [translatedResult, setTranslatedResult] = useState<{
     text: string;
@@ -39,6 +40,7 @@ export const QuickTranslateModal: React.FC<QuickTranslateModalProps> = ({
       setInputText(initialText);
       setTranslatedResult(null);
       setCopySuccess(false);
+      setTargetLang(getPreferredLanguage());
       setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
@@ -54,7 +56,12 @@ export const QuickTranslateModal: React.FC<QuickTranslateModalProps> = ({
     setCopySuccess(false);
 
     try {
-      const res = await translateText(inputText, targetLang);
+      const res = await translateText(
+        inputText,
+        targetLang,
+        false,
+        sourceLang !== 'auto' ? sourceLang : undefined
+      );
       setTranslatedResult({
         text: res.translatedText,
         from: res.detectedLang.toUpperCase(),
@@ -91,8 +98,21 @@ export const QuickTranslateModal: React.FC<QuickTranslateModalProps> = ({
     }
   };
 
-  const toggleTarget = () => {
-    setTargetLang((prev) => (prev === 'pt' ? 'en' : 'pt'));
+  const handleSwap = () => {
+    if (sourceLang === 'auto') {
+      if (translatedResult && translatedResult.from !== 'ERR') {
+        const detected = translatedResult.from.toLowerCase();
+        setSourceLang(targetLang);
+        setTargetLang(detected);
+      } else {
+        setSourceLang(targetLang);
+        setTargetLang(targetLang === 'pt' ? 'en' : 'pt');
+      }
+    } else {
+      const oldSrc = sourceLang;
+      setSourceLang(targetLang);
+      setTargetLang(oldSrc);
+    }
   };
 
   return (
@@ -109,7 +129,7 @@ export const QuickTranslateModal: React.FC<QuickTranslateModalProps> = ({
           <div>
             <h2 className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
               Tradução Rápida
-              <span className="text-[10px] text-zinc-500 font-normal">PT ↔ EN</span>
+              <span className="text-[10px] text-zinc-500 font-normal">Multi-idiomas</span>
             </h2>
           </div>
         </div>
@@ -123,23 +143,52 @@ export const QuickTranslateModal: React.FC<QuickTranslateModalProps> = ({
         </button>
       </div>
 
-      {/* Seletor de Idioma Alvo */}
-      <div className="flex items-center justify-between px-1 text-xs">
-        <span className="text-[11px] text-zinc-400">Direção:</span>
+      {/* Seletores de Idioma: Origem ⇄ Destino */}
+      <div className="flex items-center justify-between px-1 text-xs gap-1.5">
+        {/* Origem */}
+        <div className="flex-1 min-w-0">
+          <select
+            value={sourceLang}
+            onChange={(e) => setSourceLang(e.target.value)}
+            className="w-full px-2 py-1 rounded-lg glass-input text-zinc-200 text-[11px] focus:outline-none cursor-pointer truncate"
+            title="Idioma de Origem"
+          >
+            <option value="auto" className="bg-zinc-900 text-zinc-200">
+              🌐 Detectar auto
+            </option>
+            {SUPPORTED_LANGUAGES.map((l) => (
+              <option key={`src-${l.code}`} value={l.code} className="bg-zinc-900 text-zinc-200">
+                {l.flag} {l.label} ({l.code.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Botão de Inversão (Swap) */}
         <button
-          onClick={toggleTarget}
-          className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-900 border border-white/10 text-zinc-300 hover:text-cyan-300 hover:border-cyan-500/40 text-[11px] font-mono transition-colors cursor-pointer"
-          title="Alternar direção da tradução"
+          type="button"
+          onClick={handleSwap}
+          className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-400 hover:text-cyan-300 transition-colors cursor-pointer shrink-0"
+          title="Inverter idiomas (Origem ⇄ Destino)"
         >
-          <span>
-            {targetLang === 'pt'
-              ? 'Para: Português (PT)'
-              : targetLang === 'en'
-              ? 'Para: Inglês (EN)'
-              : 'Auto (PT ↔ EN)'}
-          </span>
-          <ArrowRightLeft className="w-3 h-3 text-cyan-400 ml-1" />
+          <ArrowRightLeft className="w-3.5 h-3.5" />
         </button>
+
+        {/* Destino */}
+        <div className="flex-1 min-w-0">
+          <select
+            value={targetLang}
+            onChange={(e) => setTargetLang(e.target.value)}
+            className="w-full px-2 py-1 rounded-lg glass-input text-zinc-200 text-[11px] focus:outline-none cursor-pointer truncate"
+            title="Idioma de Destino"
+          >
+            {SUPPORTED_LANGUAGES.map((l) => (
+              <option key={`tgt-${l.code}`} value={l.code} className="bg-zinc-900 text-zinc-200">
+                {l.flag} {l.label} ({l.code.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Entrada de Texto */}

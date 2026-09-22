@@ -238,11 +238,23 @@ CREATE TABLE IF NOT EXISTS app_settings (
 - **Permissão de Repositório:** O repositório no GitHub deve obrigatoriamente estar com `Settings > Actions > General > Workflow permissions` configurado como **"Read and write permissions"**.
 
 ### 9. Serviço de Tradução Rápida Integrada (v0.2.0)
-- **Módulo Frontend:** `src/services/translator.ts` com a função assíncrona `translateText(text, targetLang?)`.
-- **Endpoint:** `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${target}&dt=t&q=${encodeURIComponent(text)}`.
-- **Alternância Inteligente de Idiomas (PT <-> EN):**
-  - Heurística inicial baseada em padrões e caracteres da língua portuguesa; se o texto for português, define o alvo como `en`; caso contrário, define como `pt`.
-  - Caso o serviço retorne idioma detectado em português e o alvo tenha sido português, re-executa a tradução para inglês automaticamente.
+- **Módulo Frontend:** `src/services/translator.ts` com a função assíncrona `translateText(text, targetLang?, isRetry?, sourceLang?)`.
+- **Idiomas Homologados:** Suporte nativo a 8 idiomas: Português (`pt` 🇧🇷), English (`en` 🇺🇸), Español (`es` 🇪🇸), Français (`fr` 🇫🇷), Deutsch (`de` 🇩🇪), Italiano (`it` 🇮🇹), 日本語 (`ja` 🇯🇵) e 中文 (`zh` 🇨🇳).
+- **Endpoint:** `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${source}&tl=${target}&dt=t&q=${encodeURIComponent(text)}`.
+- **Persistência de Idioma Preferido:**
+  - Configurado na seção "Tradução" do `SettingsModal.tsx` e persistido no `localStorage` sob a chave `screenhoard_preferred_language` (padrão: `pt`).
+  - Ao traduzir qualquer card com 1 clique, o sistema utiliza o idioma preferido caso a origem seja diferente dele.
+- **Alternância Inteligente de Idiomas e Regras Estritas de Proteção:**
+  - Heurística inicial refinada para evitar falso-positivo em textos curtos em inglês.
+  - Se a origem detectada for `pt`: o alvo padrão é o idioma preferido (se diferente de `pt`) ou `en`.
+  - Se a origem detectada não for `pt`: o alvo padrão é o idioma preferido salvo (ou `pt`).
+  - **Invariante de Proteção Absoluta:** É estritamente proibido retornar tradução onde `source === target`. Se o idioma detectado coincidir com o alvo, o alvo é invertido automaticamente (`pt <-> en`) e a tradução é re-executada uma única vez com `isRetry = true`.
+- **Seletor Dinâmico nos Cards (`ClipboardCard.tsx`):**
+  - O selo no cabeçalho da gaveta de tradução (`Traduzido de [EN] para ▾ 🇧🇷 [PT]`) funciona como um dropdown interativo compacto.
+  - Permite trocar instantaneamente o idioma de destino entre os 8 idiomas suportados, disparando re-tradução imediata com indicador suave de carregamento sem fechar a gaveta.
+- **Modal Spotlight de Tradução (`QuickTranslateModal.tsx`):**
+  - Seletores dedicados para Idioma de Origem ("Detectar auto" ou idiomas específicos) e Idioma de Destino.
+  - Botão de Swap (⇄) para inversão rápida de direção.
 - **Formatação e Segmentação:** Concatena os múltiplos chunks retornados pelo endpoint preservando quebras de linha e estrutura do texto original.
 - **Tratamento de Falhas & Offline:** Detecção de ausência de rede (`!navigator.onLine`) e retorno de mensagem amigável sem quebrar a interface.
 - **Cópia da Tradução:** Invocação do comando IPC `copy_text_to_clipboard` no backend com `set_ignore_next_update(true)` e `record_last_text(&text)` para garantir a invariante de prevenção de loops.

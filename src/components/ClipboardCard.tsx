@@ -14,6 +14,7 @@ import {
   X,
   Languages,
   Film,
+  ChevronDown,
 } from 'lucide-react';
 import type { ClipboardItem } from '@/types/clipboard';
 import {
@@ -22,7 +23,7 @@ import {
   formatFileSize,
 } from '@/utils/assets';
 import { isCodeContent, isLinkContent } from '@/hooks/useClipboardHistory';
-import { translateText } from '@/services/translator';
+import { translateText, SUPPORTED_LANGUAGES } from '@/services/translator';
 
 interface ClipboardCardProps {
   item: ClipboardItem;
@@ -63,9 +64,11 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
   } | null>(null);
   const [showTranslation, setShowTranslation] = useState(false);
   const [isCopyingTranslation, setIsCopyingTranslation] = useState(false);
+  const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const langDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const isGif =
     item.type === 'image' &&
@@ -112,12 +115,24 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen]);
 
-  // Executa a tradução
-  const handleTranslate = async (e?: React.MouseEvent) => {
+  // Fecha o dropdown de idiomas da tradução ao clicar fora
+  useEffect(() => {
+    if (!isLangDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setIsLangDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isLangDropdownOpen]);
+
+  // Executa a tradução (opcionalmente com idioma alvo customizado)
+  const handleTranslate = async (e?: React.MouseEvent, customTargetLang?: string) => {
     e?.stopPropagation();
     if (!item.content || isTranslating) return;
 
-    if (translation && !showTranslation) {
+    if (translation && !showTranslation && !customTargetLang) {
       setShowTranslation(true);
       return;
     }
@@ -126,11 +141,13 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
     setShowTranslation(true);
 
     try {
-      const result = await translateText(item.content);
+      const result = await translateText(item.content, customTargetLang);
+      const fromLang = (result.detectedLang.split('-')[0] || result.detectedLang).trim().toUpperCase();
+      const toLang = (result.targetLang.split('-')[0] || result.targetLang).trim().toUpperCase();
       setTranslation({
         text: result.translatedText,
-        from: result.detectedLang.toUpperCase(),
-        to: result.targetLang.toUpperCase(),
+        from: fromLang,
+        to: toLang,
       });
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Falha na tradução.';
@@ -498,14 +515,73 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
                   {isTranslating ? (
                     <span className="animate-pulse">Traduzindo...</span>
                   ) : translation?.from !== 'ERR' ? (
-                    <span>
+                    <span className="flex items-center gap-1">
                       Traduzido de{' '}
                       <span className="font-bold text-cyan-300">
                         [{translation?.from}]
                       </span>{' '}
                       para{' '}
-                      <span className="font-bold text-violet-300">
-                        [{translation?.to}]
+                      <span className="relative inline-block" ref={langDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsLangDropdownOpen((prev) => !prev);
+                          }}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-900/60 hover:bg-violet-800/80 border border-violet-500/40 text-violet-200 font-bold hover:text-white transition-all cursor-pointer text-[10px]"
+                          title="Alterar idioma de destino"
+                        >
+                          <span>
+                            {SUPPORTED_LANGUAGES.find((l) => l.code.toUpperCase() === translation?.to)?.flag || ''}{' '}
+                            [{translation?.to}]
+                          </span>
+                          <ChevronDown
+                            className={`w-2.5 h-2.5 text-violet-300 transition-transform duration-150 ${
+                              isLangDropdownOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+
+                        {/* Dropdown de Idiomas Suportados */}
+                        {isLangDropdownOpen && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute left-0 top-full mt-1 z-50 w-36 rounded-lg bg-zinc-900 border border-white/15 shadow-2xl py-1 text-[11px] text-zinc-200 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
+                          >
+                            <div className="px-2 py-0.5 text-[9px] font-semibold text-zinc-400 border-b border-white/10 uppercase tracking-wider">
+                              Traduzir para
+                            </div>
+                            <div className="max-h-48 overflow-y-auto py-0.5">
+                              {SUPPORTED_LANGUAGES.map((lang) => {
+                                const isCurrent = translation?.to.toLowerCase() === lang.code;
+                                return (
+                                  <button
+                                    key={lang.code}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setIsLangDropdownOpen(false);
+                                      handleTranslate(e, lang.code);
+                                    }}
+                                    className={`w-full px-2 py-1 flex items-center justify-between text-left hover:bg-white/10 transition-colors cursor-pointer ${
+                                      isCurrent
+                                        ? 'text-cyan-300 font-semibold bg-violet-600/20'
+                                        : 'text-zinc-300'
+                                    }`}
+                                  >
+                                    <span className="flex items-center gap-1.5">
+                                      <span>{lang.flag}</span>
+                                      <span>{lang.label}</span>
+                                    </span>
+                                    <span className="text-[9px] font-mono text-zinc-500 uppercase">
+                                      [{lang.code}]
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </span>
                     </span>
                   ) : (

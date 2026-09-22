@@ -39,6 +39,18 @@ export const App: React.FC = () => {
     searchInputRef.current?.focus();
   }, []);
 
+  // Listener global de atalhos de janela (ex: Ctrl+, para alternar Configurações)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setIsSettingsOpen(!isSettingsOpen);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isSettingsOpen]);
+
   // Scroll automático do card focado para mantê-lo visível na viewport
   useEffect(() => {
     if (cardsContainerRef.current) {
@@ -87,6 +99,13 @@ export const App: React.FC = () => {
         setIsQuickTranslateOpen(false);
         searchInputRef.current?.focus();
       }
+      return;
+    }
+
+    // Atalho global Ctrl+, ou Cmd+, para abrir/fechar Configurações
+    if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      setIsSettingsOpen(!isSettingsOpen);
       return;
     }
 
@@ -190,6 +209,7 @@ export const App: React.FC = () => {
           onFilterChange={setActiveFilter}
           counts={counts}
           isSettingsOpen={isSettingsOpen}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           onToggleSettings={() => setIsSettingsOpen(!isSettingsOpen)}
           onStartRecording={() => startRecording()}
           onQuickTranslate={handleTriggerTranslate}
