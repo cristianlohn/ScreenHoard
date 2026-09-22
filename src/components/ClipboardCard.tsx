@@ -15,6 +15,7 @@ import {
   Languages,
   Film,
   ChevronDown,
+  ScanText,
 } from 'lucide-react';
 import type { ClipboardItem } from '@/types/clipboard';
 import {
@@ -65,6 +66,12 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
   const [showTranslation, setShowTranslation] = useState(false);
   const [isCopyingTranslation, setIsCopyingTranslation] = useState(false);
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
+
+  // Estados locais para a funcionalidade de OCR (extração nativa de texto)
+  const [isExtractingOcr, setIsExtractingOcr] = useState(false);
+  const [ocrResult, setOcrResult] = useState<string | null>(null);
+  const [showOcrDrawer, setShowOcrDrawer] = useState(false);
+  const [isCopyingOcr, setIsCopyingOcr] = useState(false);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -127,12 +134,13 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isLangDropdownOpen]);
 
-  // Executa a tradução (opcionalmente com idioma alvo customizado)
-  const handleTranslate = async (e?: React.MouseEvent, customTargetLang?: string) => {
+  // Executa a tradução (opcionalmente com idioma alvo customizado ou texto sobrescrito)
+  const handleTranslate = async (e?: React.MouseEvent, customTargetLang?: string, overrideText?: string) => {
     e?.stopPropagation();
-    if (!item.content || isTranslating) return;
+    const textToTranslate = overrideText || (item.type === 'image' ? (ocrResult || '') : item.content);
+    if (!textToTranslate || isTranslating) return;
 
-    if (translation && !showTranslation && !customTargetLang) {
+    if (translation && !showTranslation && !customTargetLang && !overrideText) {
       setShowTranslation(true);
       return;
     }
@@ -141,7 +149,7 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
     setShowTranslation(true);
 
     try {
-      const result = await translateText(item.content, customTargetLang);
+      const result = await translateText(textToTranslate, customTargetLang);
       const fromLang = (result.detectedLang.split('-')[0] || result.detectedLang).trim().toUpperCase();
       const toLang = (result.targetLang.split('-')[0] || result.targetLang).trim().toUpperCase();
       setTranslation({
@@ -159,6 +167,51 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
     } finally {
       setIsTranslating(false);
     }
+  };
+
+  // Extrai texto da imagem via OCR nativo do Windows (Windows.Media.Ocr)
+  const handleExtractOcr = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const imagePath = item.content || item.preview_url;
+    if (!imagePath || isExtractingOcr) return;
+
+    if (ocrResult !== null && !showOcrDrawer) {
+      setShowOcrDrawer(true);
+      return;
+    }
+
+    setIsExtractingOcr(true);
+    setShowOcrDrawer(true);
+
+    try {
+      const text: string = await invoke('extract_text_from_image', {
+        filePath: imagePath,
+      });
+      setOcrResult(text);
+      if (text && text.trim().length > 0) {
+        await invoke('copy_text_to_clipboard', { text });
+        setIsCopyingOcr(true);
+        setTimeout(() => setIsCopyingOcr(false), 2000);
+      }
+    } catch (err: unknown) {
+      console.error('[ScreenHoard] Erro ao extrair texto via OCR:', err);
+      setOcrResult('');
+    } finally {
+      setIsExtractingOcr(false);
+    }
+  };
+
+  // Copia novamente o texto extraído para o clipboard
+  const handleCopyOcrAgain = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!ocrResult || ocrResult.trim().length === 0) return;
+    setIsCopyingOcr(true);
+    try {
+      await invoke('copy_text_to_clipboard', { text: ocrResult });
+    } catch (err) {
+      console.error('[ScreenHoard] Erro ao copiar texto OCR via IPC:', err);
+    }
+    setTimeout(() => setIsCopyingOcr(false), 1500);
   };
 
   // Responde ao atalho de teclado 'T' disparado pelo container App
@@ -416,6 +469,26 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
                 </button>
               )}
 
+              {/* Botão de Extração de Texto via OCR para Imagens */}
+              {item.type === 'image' && !isGif && (
+                <button
+                  onClick={handleExtractOcr}
+                  disabled={isExtractingOcr}
+                  tabIndex={-1}
+                  className={`bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 ${
+                    showOcrDrawer
+                      ? 'bg-indigo-600/30 text-indigo-200 border-indigo-500/40 shadow-sm shadow-indigo-500/20'
+                      : ''
+                  }`}
+                  title="Extrair e copiar texto da imagem com OCR nativo"
+                >
+                  <ScanText className={`w-3.5 h-3.5 ${isExtractingOcr ? 'animate-spin text-indigo-300' : 'text-indigo-400'}`} />
+                  <span className="text-[11px] font-medium">
+                    {isExtractingOcr ? 'Extraindo...' : 'Copiar Texto'}
+                  </span>
+                </button>
+              )}
+
               <button
                 onClick={onTogglePin}
                 tabIndex={-1}
@@ -499,6 +572,99 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
               <p className="font-mono text-xs text-zinc-200 line-clamp-3 whitespace-pre-wrap break-words leading-relaxed">
                 {item.content}
               </p>
+            </div>
+          )}
+
+          {/* Painel Expansível de Texto Extraído via OCR */}
+          {showOcrDrawer && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-xs text-zinc-200 flex flex-col gap-2 animate-in fade-in duration-150 shadow-lg shadow-indigo-950/30 select-text"
+            >
+              {/* Cabeçalho do Painel OCR */}
+              <div className="flex items-center justify-between border-b border-indigo-500/20 pb-1.5 text-[10px]">
+                <div className="flex items-center gap-1.5 font-medium text-indigo-300">
+                  <ScanText className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                  {isExtractingOcr ? (
+                    <span className="animate-pulse">Extraindo texto com OCR nativo...</span>
+                  ) : ocrResult && ocrResult.trim().length > 0 ? (
+                    <span className="flex items-center gap-1.5">
+                      <span>Texto Reconhecido</span>
+                      {isCopyingOcr && (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                          • Copiado!
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-400">Reconhecimento OCR</span>
+                  )}
+                </div>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowOcrDrawer(false);
+                  }}
+                  className="p-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-indigo-900/50 transition-colors"
+                  title="Recolher painel OCR"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Conteúdo do OCR */}
+              {isExtractingOcr ? (
+                <div className="py-3 flex items-center justify-center text-zinc-400 gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
+                  <span className="text-[11px]">Processando imagem com Windows.Media.Ocr...</span>
+                </div>
+              ) : !ocrResult || ocrResult.trim().length === 0 ? (
+                <div className="py-2 text-center text-zinc-400 text-xs italic">
+                  Nenhum texto identificado nesta imagem
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-36 overflow-y-auto pr-1">
+                    <p className="text-xs text-zinc-100 font-mono leading-relaxed whitespace-pre-wrap select-text">
+                      {ocrResult}
+                    </p>
+                  </div>
+
+                  {/* Barra de Ações da Gaveta OCR */}
+                  <div className="flex items-center justify-between pt-1 border-t border-indigo-500/20">
+                    {/* Botão de Tradução Integrada */}
+                    <button
+                      onClick={(e) => handleTranslate(e, undefined, ocrResult)}
+                      disabled={isTranslating}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-400/30 text-[10px] font-medium transition-all active:scale-95 cursor-pointer"
+                      title="Traduzir o texto extraído"
+                    >
+                      <Languages className={`w-3 h-3 ${isTranslating ? 'animate-spin' : 'text-cyan-400'}`} />
+                      <span>{isTranslating ? 'Traduzindo...' : 'Traduzir Texto'}</span>
+                    </button>
+
+                    {/* Botão Copiar Novamente */}
+                    <button
+                      onClick={handleCopyOcrAgain}
+                      disabled={isCopyingOcr}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600/50 hover:bg-indigo-600 text-indigo-100 border border-indigo-400/40 text-[10px] font-medium shadow-sm transition-all active:scale-95 cursor-pointer"
+                    >
+                      {isCopyingOcr ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
+                          <span>Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-indigo-300" />
+                          <span>Copiar Novamente</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -670,6 +836,20 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
             >
               <Languages className="w-3.5 h-3.5 text-cyan-400" />
               <span>Traduzir</span>
+            </button>
+          )}
+
+          {/* Opção Extrair Texto (OCR) no Menu */}
+          {item.type === 'image' && !isGif && (
+            <button
+              onClick={(e) => {
+                setIsMenuOpen(false);
+                handleExtractOcr(e);
+              }}
+              className="w-full px-2.5 py-1.5 flex items-center gap-2 hover:bg-white/10 text-left transition-colors"
+            >
+              <ScanText className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Extrair Texto (OCR)</span>
             </button>
           )}
 

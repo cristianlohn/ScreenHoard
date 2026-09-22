@@ -351,6 +351,24 @@ CREATE TABLE IF NOT EXISTS app_settings (
   - O aplicativo escuta `WindowEvent::Moved(pos)` no setup e também lê `window.outer_position()` em `hide_modal_window`, gravando `window_pos_x` e `window_pos_y` na tabela `app_settings`.
   - Em `show_modal_window` e `hooks::toggle_main_modal`, a função `restore_or_center_window` valida se as coordenadas salvas interceptam a área útil de algum monitor disponível (`window.available_monitors()`). Se válido, restaura as coordenadas exatas; se inválido ou inexistente, centraliza a janela.
 
+### 13. Reconhecimento Óptico de Caracteres Nativo (OCR WinRT) (v0.3.0)
+- **Motor 100% Offline e Local:** Utiliza as APIs WinRT nativas do Windows (`Windows.Media.Ocr.OcrEngine`) através do crate `windows = "0.58"` com as features `Media_Ocr`, `Graphics_Imaging`, `Storage_Streams`, `Foundation`, `Foundation_Collections`, `Globalization`. Não requer bibliotecas externas pesadas (como Tesseract) nem download de modelos ou dependência de internet.
+- **Pipeline de Decodificação e Conversão de Imagem (`ocr.rs`):**
+  - Lê o arquivo de imagem do disco (`recognize_text_from_path`) resolvendo caminhos relativos em `%APPDATA%/ScreenHoard/`.
+  - Cria um `InMemoryRandomAccessStream`, popula os bytes via `DataWriter` e decodifica o bitmap com `BitmapDecoder::CreateAsync`.
+  - Extrai o `SoftwareBitmap` e converte obrigatoriamente para `BitmapPixelFormat::Bgra8` via `SoftwareBitmap::Convert`, formato estritamente exigido pelo `OcrEngine`.
+- **Seleção de Idioma Resiliente:**
+  - Tenta inicializar com os idiomas de perfil do usuário (`OcrEngine::TryCreateFromUserProfileLanguages`).
+  - Em caso de falha, faz fallback automático para o primeiro idioma suportado disponível no sistema (`OcrEngine::AvailableRecognizerLanguages`).
+- **Extração com Quebras de Linha Naturais:**
+  - Itera pelas linhas do `OcrResult` (`result.Lines()`), extraindo o texto de cada linha individualmente e unindo com quebras de linha (`\n`), preservando a estrutura original do documento ou print de tela.
+- **Execução Desacoplada do Tokio:**
+  - O processamento síncrono WinRT roda dentro de `tauri::async_runtime::spawn_blocking` para não bloquear o event loop assíncrono do Tauri.
+- **Experiência no Card de Imagem (`ClipboardCard.tsx`):**
+  - Cards de imagem estática (`type === 'image' && !isGif`) contam com o botão "Copiar Texto" (ícone `ScanText`) no cabeçalho e opção "Extrair Texto (OCR)" no menu de contexto.
+  - Ao clicar, o texto extraído é imediatamente injetado na área de transferência com supressão de auto-captura garantida e micro-feedback visual ("• Copiado!").
+  - Gaveta retrátil exibe o texto extraído com suporte a rolagem para textos longos, botões para "Copiar Novamente" e "Traduzir Texto" (integrado diretamente ao motor multi-idioma de tradução). Se nenhum texto for identificado, exibe "Nenhum texto identificado nesta imagem".
+
 ---
 
 ## 7. Registro de Arquitetura de Módulos (Rust / `src-tauri`)
@@ -361,6 +379,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 | `src-tauri/src/screenshot.rs` | Captura multi-monitor via xcap, cursor tracking e injeção arboard |
 | `src-tauri/src/recorder.rs` | Gravação nativa de tela em GIF com streaming, downscale 960px e codificação LZW |
 | `src-tauri/src/clipboard_win.rs` | Cópia nativa de GIFs para o clipboard via CF_HDROP e formato GIF registrado |
+| `src-tauri/src/ocr.rs` | Extração nativa de texto via Windows.Media.Ocr, streams de memória WinRT e conversão Bgra8 |
 | `src-tauri/src/hooks.rs` | Hooks Win32 `WH_MOUSE_LL` / `WH_KEYBOARD_LL` em thread dedicada com supressão |
 | `src-tauri/src/tray.rs` | System Tray Icon, menu de contexto e dispatch de eventos |
 | `src-tauri/src/autostart.rs` | Leitura e gravação na chave `HKCU Run` do Registro do Windows |

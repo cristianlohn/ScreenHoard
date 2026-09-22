@@ -4,6 +4,7 @@ pub mod clipboard_listener;
 pub mod clipboard_win;
 pub mod db;
 pub mod hooks;
+pub mod ocr;
 pub mod recorder;
 pub mod screenshot;
 pub mod tray;
@@ -609,6 +610,12 @@ fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
     autostart::set_autostart_enabled(enabled)
 }
 
+/// Extrai texto de imagem usando a API nativa Windows.Media.Ocr.
+#[tauri::command]
+async fn extract_text_from_image(file_path: String) -> Result<String, String> {
+    ocr::recognize_text_from_path(&file_path).await
+}
+
 /* ==========================================================================
    Inicialização da Aplicação
    ========================================================================== */
@@ -719,6 +726,7 @@ pub fn run() {
             get_app_data_dir,
             is_autostart_enabled,
             set_autostart_enabled,
+            extract_text_from_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ScreenHoard application");
