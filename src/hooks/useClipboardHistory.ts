@@ -44,7 +44,7 @@ export interface UseClipboardHistoryReturn {
   isSettingsOpen: boolean;
   setIsSettingsOpen: (open: boolean) => void;
   copyingItemId: string | null;
-  copyItem: (id: string) => Promise<void>;
+  copyItem: (id: string, itemType?: string) => Promise<void>;
   renameItem: (id: string, title: string) => Promise<void>;
   togglePin: (id: string, e?: React.MouseEvent) => Promise<void>;
   deleteItem: (id: string, e?: React.MouseEvent) => Promise<void>;
@@ -109,39 +109,12 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
   useEffect(() => {
     refreshHistory();
 
-    invoke<boolean>('is_recording_active')
-      .then((active) => {
-        if (active) setIsRecording(true);
-      })
-      .catch(() => {});
-
     invoke<string | null>('get_setting', { key: 'gif_max_duration' })
       .then((val) => {
         if (val) setMaxRecordingDuration(Number(val));
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [refreshHistory]);
-
-  // Timer de progresso enquanto grava
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (isRecording) {
-      interval = setInterval(() => {
-        setRecordingDuration((prev) => {
-          if (prev + 1 >= maxRecordingDuration) {
-            setIsRecording(false);
-            return maxRecordingDuration;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    } else {
-      setRecordingDuration(0);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRecording, maxRecordingDuration]);
 
   // Listener para eventos de atualização de clipboard e gravação emitidos pelo Rust
   useEffect(() => {
@@ -149,6 +122,7 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
     let unlistenModal: UnlistenFn | null = null;
     let unlistenRecStart: UnlistenFn | null = null;
     let unlistenRecFinish: UnlistenFn | null = null;
+    let unlistenRecStatus: UnlistenFn | null = null;
 
     async function setupListeners() {
       // Quando um novo screenshot ou item for gravado pelo backend
@@ -170,6 +144,8 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
       unlistenModal = await listen('modal-opened', () => {
         setSelectedIndex(0);
         setIsSettingsOpen(false);
+        setIsRecording(false);
+        setRecordingDuration(0);
         refreshHistory();
       });
 
@@ -181,7 +157,15 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
 
       unlistenRecFinish = await listen('recording-finished', () => {
         setIsRecording(false);
+        setRecordingDuration(0);
         refreshHistory();
+      });
+
+      unlistenRecStatus = await listen<{ is_recording: boolean }>('recording-status-changed', (event) => {
+        setIsRecording(event.payload.is_recording);
+        if (!event.payload.is_recording) {
+          setRecordingDuration(0);
+        }
       });
     }
 
@@ -192,6 +176,7 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
       if (unlistenModal) unlistenModal();
       if (unlistenRecStart) unlistenRecStart();
       if (unlistenRecFinish) unlistenRecFinish();
+      if (unlistenRecStatus) unlistenRecStatus();
     };
   }, [refreshHistory]);
 
@@ -242,25 +227,46 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
   };
 
   // Copia o item para a área de transferência com micro-feedback visual antes de ocultar
-  const copyItem = useCallback(async (id: string) => {
+  const copyItem = useCallback(async (id: string, itemType?: string) => {
     setCopyingItemId(id);
-    try {
-      await invoke('copy_item_to_clipboard', { id });
-    } catch (err) {
-      console.error('[ScreenHoard] Falha ao copiar item via IPC:', err);
-    }
+    const targetItem = items.find((i) => i.id === id);
+    const resolvedType = itemType || targetItem?.type || 'text';
 
-    // Micro-feedback visual de ~120ms antes de fechar a janela
-    setTimeout(async () => {
-      try {
-        await invoke('hide_modal_window');
-      } catch (err) {
-        console.error('[ScreenHoard] Falha ao ocultar modal:', err);
-      } finally {
-        setCopyingItemId(null);
+    try {
+      if (resolvedType === 'image') {
+        await invoke('copy_item_to_clipboard', {
+          id,
+          item_type: 'image',
+          itemType: 'image',
+        });
+      } else {
+        if (targetItem?.content) {
+          await invoke('copy_text_to_clipboard', { text: targetItem.content });
+        } else {
+          await invoke('copy_item_to_clipboard', {
+            id,
+            item_type: resolvedType,
+            itemType: resolvedType,
+          });
+        }
       }
-    }, 120);
-  }, []);
+
+      // Micro-feedback visual de ~120ms antes de fechar a janela
+      setTimeout(async () => {
+        try {
+          await invoke('hide_modal_window');
+        } catch (err) {
+          console.error('[ScreenHoard] Falha ao ocultar modal:', err);
+        } finally {
+          setCopyingItemId(null);
+        }
+      }, 120);
+    } catch (err) {
+      console.error('[ScreenHoard] Falha ao copiar item para o clipboard:', err);
+      setCopyingItemId(null);
+      alert('Erro ao copiar para o clipboard: ' + String(err));
+    }
+  }, [items]);
 
   // Renomeia o item (define título / alias)
   const renameItem = useCallback(async (id: string, title: string) => {
@@ -312,25 +318,24 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
     }
   }, [refreshHistory]);
 
-  // Inicia gravação nativa de GIF
-  const startRecording = useCallback(async (customMaxSecs?: number) => {
+  // Inicia o processo de gravação abrindo o overlay de seleção de região
+  const startRecording = useCallback(async () => {
     try {
-      let maxSecs = customMaxSecs;
-      if (!maxSecs) {
-        const savedDuration = await invoke<string | null>('get_setting', {
-          key: 'gif_max_duration',
-        });
-        maxSecs = savedDuration ? Number(savedDuration) : 15;
-      }
-      setMaxRecordingDuration(maxSecs);
-      setRecordingDuration(0);
-      setIsRecording(true);
-      await invoke('start_screen_recording', { maxSeconds: maxSecs });
+      await invoke('hide_modal_window');
+      await invoke('open_recorder_overlay');
     } catch (err) {
-      console.error('[ScreenHoard] Falha ao iniciar gravação:', err);
-      setIsRecording(false);
+      console.error('[ScreenHoard] Falha ao abrir overlay de gravação:', err);
+      // Fallback para gravação direta caso a overlay falhe
+      try {
+        await invoke('start_screen_recording', {
+          maxSeconds: maxRecordingDuration,
+          max_seconds: maxRecordingDuration,
+        });
+      } catch (fallbackErr) {
+        console.error('[ScreenHoard] Falha no fallback de gravação:', fallbackErr);
+      }
     }
-  }, []);
+  }, [maxRecordingDuration]);
 
   // Interrompe gravação de GIF manualmente
   const stopRecording = useCallback(async () => {

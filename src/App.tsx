@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useClipboardHistory } from '@/hooks/useClipboardHistory';
+import { useClipboardHistory, isCodeContent } from '@/hooks/useClipboardHistory';
 import { SearchBar } from '@/components/SearchBar';
 import { ClipboardCard } from '@/components/ClipboardCard';
 import { SettingsModal } from '@/components/SettingsModal';
+import { QuickTranslateModal } from '@/components/QuickTranslateModal';
 import { CornerDownLeft, Layers } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -24,16 +25,14 @@ export const App: React.FC = () => {
     togglePin,
     deleteItem,
     counts,
-    isRecording,
-    recordingDuration,
-    maxRecordingDuration,
     startRecording,
-    stopRecording,
   } = useClipboardHistory();
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const cardsContainerRef = useRef<HTMLDivElement | null>(null);
   const [translateTargetId, setTranslateTargetId] = useState<string | null>(null);
+  const [isQuickTranslateOpen, setIsQuickTranslateOpen] = useState(false);
+  const [quickTranslateInitialText, setQuickTranslateInitialText] = useState('');
 
   // Garante auto-foco na barra de busca ao iniciar e manter o padrão Spotlight
   useEffect(() => {
@@ -57,8 +56,40 @@ export const App: React.FC = () => {
     }
   }, [selectedIndex]);
 
+  // Dispara a tradução do item ativo ou abre o modal de tradução rápida
+  const handleTriggerTranslate = () => {
+    const current = filteredItems[selectedIndex];
+    if (current && (current.type === 'text' || isCodeContent(current.content))) {
+      setTranslateTargetId(current.id);
+    } else {
+      // Procura primeiro item de texto/código no histórico
+      const firstTextItem = filteredItems.find(
+        (i) => i.type === 'text' || isCodeContent(i.content)
+      );
+      if (firstTextItem) {
+        const idx = filteredItems.findIndex((i) => i.id === firstTextItem.id);
+        if (idx !== -1) setSelectedIndex(idx);
+        setTranslateTargetId(firstTextItem.id);
+      } else {
+        // Se não houver nenhum texto no histórico, abre o modal de tradução rápida
+        setQuickTranslateInitialText('');
+        setIsQuickTranslateOpen(true);
+      }
+    }
+  };
+
   // Navegação linear por teclado (ArrowUp e ArrowDown percorrem a lista contínua)
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Se o modal de tradução rápida estiver aberto
+    if (isQuickTranslateOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsQuickTranslateOpen(false);
+        searchInputRef.current?.focus();
+      }
+      return;
+    }
+
     // Se as configurações estiverem abertas, Esc fecha as configurações
     if (isSettingsOpen) {
       if (e.key === 'Escape') {
@@ -70,22 +101,25 @@ export const App: React.FC = () => {
     }
 
     const total = filteredItems.length;
+    const isInputFocused = document.activeElement === searchInputRef.current;
 
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
+        searchInputRef.current?.blur();
         setSelectedIndex((prev) => (total > 0 ? Math.min(prev + 1, total - 1) : 0));
         break;
 
       case 'ArrowUp':
         e.preventDefault();
+        searchInputRef.current?.blur();
         setSelectedIndex((prev) => (total > 0 ? Math.max(prev - 1, 0) : 0));
         break;
 
       case 'Enter':
         e.preventDefault();
         if (filteredItems[selectedIndex]) {
-          copyItem(filteredItems[selectedIndex].id);
+          copyItem(filteredItems[selectedIndex].id, filteredItems[selectedIndex].type);
         }
         break;
 
@@ -95,10 +129,11 @@ export const App: React.FC = () => {
         break;
 
       case 'Delete':
-        // Exclui o card focado se a busca estiver vazia ou cursor no fim
+        // Exclui o card focado se a busca estiver vazia ou se não estiver no input
         if (
           filteredItems[selectedIndex] &&
-          (searchQuery === '' ||
+          (!isInputFocused ||
+            searchQuery === '' ||
             searchInputRef.current?.selectionStart === searchInputRef.current?.value.length)
         ) {
           e.preventDefault();
@@ -108,10 +143,10 @@ export const App: React.FC = () => {
 
       case 'p':
       case 'P':
-        // Alterna fixação apenas quando o campo de busca estiver vazio ou com Alt/Ctrl
+        // Alterna fixação apenas quando não estiver digitando na busca (ou com Alt/Ctrl)
         if (
           filteredItems[selectedIndex] &&
-          (searchQuery === '' || e.altKey || e.ctrlKey)
+          (!isInputFocused || e.altKey || e.ctrlKey)
         ) {
           e.preventDefault();
           togglePin(filteredItems[selectedIndex].id);
@@ -120,14 +155,18 @@ export const App: React.FC = () => {
 
       case 't':
       case 'T':
-        // Dispara tradução do item ativo se for texto/código
-        if (
-          filteredItems[selectedIndex] &&
-          filteredItems[selectedIndex].type !== 'image' &&
-          (searchQuery === '' || e.altKey || e.ctrlKey)
-        ) {
+        // Se o usuário estiver focado no input e NÃO pressionar Ctrl/Alt, permite digitação normal
+        if (!isInputFocused || e.altKey || e.ctrlKey) {
           e.preventDefault();
-          setTranslateTargetId(filteredItems[selectedIndex].id);
+          handleTriggerTranslate();
+        }
+        break;
+
+      case '/':
+        // Tecla '/' foca no input de busca se não estiver focado
+        if (!isInputFocused) {
+          e.preventDefault();
+          searchInputRef.current?.focus();
         }
         break;
 
@@ -139,9 +178,9 @@ export const App: React.FC = () => {
   return (
     <main
       onKeyDown={handleKeyDown}
-      className="w-screen h-screen p-2 select-none flex items-center justify-center bg-transparent overflow-hidden"
+      className="w-screen h-screen m-0 p-0 select-none overflow-hidden bg-transparent flex flex-col"
     >
-      <div className="relative w-full h-full max-w-[380px] max-h-[660px] rounded-2xl glass-panel border border-white/10 shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-full h-full border border-zinc-800/80 rounded-2xl bg-zinc-950/95 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Barra Superior de Ícones + Busca Spotlight */}
         <SearchBar
           inputRef={searchInputRef}
@@ -152,11 +191,8 @@ export const App: React.FC = () => {
           counts={counts}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen(!isSettingsOpen)}
-          isRecording={isRecording}
-          recordingDuration={recordingDuration}
-          maxRecordingDuration={maxRecordingDuration}
           onStartRecording={() => startRecording()}
-          onStopRecording={stopRecording}
+          onQuickTranslate={handleTriggerTranslate}
         />
 
         {/* Área Central: Lista Vertical Fluida de Cards */}
@@ -193,7 +229,7 @@ export const App: React.FC = () => {
                     isTranslateRequested={translateTargetId === item.id}
                     onTranslationHandled={() => setTranslateTargetId(null)}
                     onSelect={() => setSelectedIndex(index)}
-                    onCopy={() => copyItem(item.id)}
+                    onCopy={() => copyItem(item.id, item.type)}
                     onTogglePin={(e) => togglePin(item.id, e)}
                     onDelete={(e) => deleteItem(item.id, e)}
                     onRename={renameItem}
@@ -224,7 +260,7 @@ export const App: React.FC = () => {
 
             <span className="flex items-center gap-1">
               <kbd className="px-1 py-0.5 rounded bg-zinc-800/80 border border-white/10 text-zinc-300 font-mono text-[9px]">
-                T
+                Ctrl+T
               </kbd>
               Traduzir
             </span>
@@ -259,6 +295,16 @@ export const App: React.FC = () => {
             setIsSettingsOpen(false);
             searchInputRef.current?.focus();
           }}
+        />
+
+        {/* Modal de Tradução Rápida */}
+        <QuickTranslateModal
+          isOpen={isQuickTranslateOpen}
+          onClose={() => {
+            setIsQuickTranslateOpen(false);
+            searchInputRef.current?.focus();
+          }}
+          initialText={quickTranslateInitialText}
         />
       </div>
     </main>

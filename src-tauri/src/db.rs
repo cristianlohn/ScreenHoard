@@ -258,6 +258,34 @@ pub fn list_clipboard_items(
     Ok(result)
 }
 
+/// Busca um item específico pelo ID.
+pub fn get_clipboard_item(
+    conn: &Connection,
+    id: &str,
+) -> Result<Option<ClipboardItem>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, type, title, content, preview_url, metadata, is_pinned, created_at
+         FROM clipboard_items WHERE id = ?1",
+    )?;
+    let item = stmt
+        .query_row(params![id], |row| {
+            let metadata_raw: Option<String> = row.get(5)?;
+            let metadata_val = metadata_raw.and_then(|s| serde_json::from_str(&s).ok());
+            Ok(ClipboardItem {
+                id: row.get(0)?,
+                item_type: row.get(1)?,
+                title: row.get(2)?,
+                content: row.get(3)?,
+                preview_url: row.get(4)?,
+                metadata: metadata_val,
+                is_pinned: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .optional()?;
+    Ok(item)
+}
+
 /// Atualiza o título/apelido de um item no banco de dados.
 pub fn rename_clipboard_item(
     conn: &Connection,

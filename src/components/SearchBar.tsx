@@ -1,4 +1,5 @@
 import React from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   Clipboard,
   Image as ImageIcon,
@@ -10,7 +11,7 @@ import {
   Search,
   X,
   Video,
-  Square,
+  Languages,
 } from 'lucide-react';
 import type { FilterTab } from '@/hooks/useClipboardHistory';
 
@@ -30,11 +31,8 @@ interface SearchBarProps {
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
-  isRecording?: boolean;
-  recordingDuration?: number;
-  maxRecordingDuration?: number;
   onStartRecording?: () => void;
-  onStopRecording?: () => void;
+  onQuickTranslate?: () => void;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({
@@ -46,40 +44,52 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   isSettingsOpen,
   onToggleSettings,
   inputRef,
-  isRecording = false,
-  recordingDuration = 0,
-  maxRecordingDuration = 15,
   onStartRecording,
-  onStopRecording,
+  onQuickTranslate,
 }) => {
-  const formatDuration = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const handleHeaderMouseDown = async (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Apenas clique primário (esquerdo)
+    const target = e.target as HTMLElement;
+    // Ignora cliques que ocorram sobre botões, inputs, links ou ícones interativos
+    if (target.closest('button, input, a, [data-no-drag]')) {
+      return;
+    }
+    try {
+      await getCurrentWindow().startDragging();
+    } catch (err) {
+      console.error('Falha ao iniciar arraste:', err);
+    }
   };
 
   return (
-    <header className="flex flex-col gap-2 p-2.5 pb-2 border-b border-white/10 bg-zinc-950/40 select-none">
+    <header
+      data-tauri-drag-region
+      onMouseDown={handleHeaderMouseDown}
+      className="flex flex-col gap-2 p-2.5 pb-2 border-b border-white/10 bg-zinc-950/40 select-none cursor-grab active:cursor-grabbing"
+    >
       {/* Top Header: Brand Badge + Navigation Icons */}
-      <div className="flex items-center justify-between gap-1">
-        {/* Brand Mini Badge */}
-        <div className="flex items-center gap-1.5 pl-0.5 flex-shrink-0">
+      <div data-tauri-drag-region className="flex items-center justify-between gap-1">
+        {/* Brand Mini Badge (Área de Arraste) */}
+        <div
+          data-tauri-drag-region
+          className="flex items-center gap-1.5 pl-0.5 flex-shrink-0 cursor-grab active:cursor-grabbing"
+        >
           <img
             src="/icon.png"
             alt="ScreenHoard"
-            className="w-4 h-4 rounded-md object-cover shadow-sm shadow-violet-500/20"
+            data-tauri-drag-region
+            className="w-4 h-4 rounded-md object-cover shadow-sm shadow-violet-500/20 pointer-events-none"
           />
           <span
-            className={`text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400 font-semibold text-xs tracking-wide ${
-              isRecording ? 'hidden' : 'inline'
-            }`}
+            data-tauri-drag-region
+            className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400 font-semibold text-xs tracking-wide pointer-events-none inline"
           >
             ScreenHoard
           </span>
         </div>
 
         {/* Barra de Categorias e Ícones Minimalistas */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <NavIconButton
             active={activeFilter === 'all'}
             onClick={() => onFilterChange('all')}
@@ -120,43 +130,43 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           <div className="w-[1px] h-3.5 bg-white/10 mx-0.5" />
 
           {/* Botão de Gravação Nativa de GIF */}
-          {isRecording ? (
-            <div className="flex items-center gap-1">
-              <div
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-500/20 border border-red-500/40 text-[10px] font-mono text-red-300 animate-pulse select-none"
-                title={`Gravando GIF (Máx: ${maxRecordingDuration}s)`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block animate-ping" />
-                <span className="font-semibold">
-                  REC {formatDuration(recordingDuration)} / {formatDuration(maxRecordingDuration)}
-                </span>
-              </div>
-              <button
-                onClick={onStopRecording}
-                tabIndex={-1}
-                title="Concluir e Salvar GIF (Stop)"
-                className="p-1 rounded-md bg-red-600 hover:bg-red-500 text-white shadow-sm shadow-red-600/30 transition-all flex items-center justify-center"
-              >
-                <Square className="w-3 h-3 fill-current" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={onStartRecording}
-              tabIndex={-1}
-              title="Gravar GIF de Tela"
-              className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-pink-300 hover:bg-pink-500/10 hover:border-pink-500/30 border-transparent"
-            >
-              <Video className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                if (onStartRecording) {
+                  await onStartRecording();
+                }
+              } catch (err) {
+                console.error('Erro ao iniciar gravação:', err);
+              }
+            }}
+            tabIndex={-1}
+            title="Gravar GIF de Tela"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-pink-300 hover:bg-pink-500/10 hover:border-pink-500/30 border-transparent cursor-pointer"
+          >
+            <Video className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Botão de Tradução Rápida */}
+          <button
+            onClick={onQuickTranslate}
+            tabIndex={-1}
+            title="Tradução Rápida (Ctrl+T)"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-500/30 border-transparent cursor-pointer"
+          >
+            <Languages className="w-3.5 h-3.5" />
+          </button>
 
           {/* Botão de Configurações */}
           <button
             onClick={onToggleSettings}
             tabIndex={-1}
             title="Configurações & Atalhos"
-            className={`p-1.5 rounded-md border transition-all flex items-center justify-center ${
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            className={`p-1.5 rounded-md border transition-all flex items-center justify-center cursor-pointer ${
               isSettingsOpen
                 ? 'bg-violet-600/30 text-violet-200 border-violet-500/40 shadow-sm shadow-violet-500/20'
                 : 'bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border-transparent'
@@ -172,7 +182,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       </div>
 
       {/* Campo de Busca Estilizado "Filtrar por nome ou conteúdo..." */}
-      <div className="relative flex items-center">
+      <div className="relative flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Search className="absolute left-2.5 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
         <input
           ref={inputRef}
@@ -180,6 +190,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Filtrar por nome ou conteúdo..."
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           className="w-full pl-8 pr-7 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 rounded-lg glass-input focus:outline-none transition-all"
           autoComplete="off"
           spellCheck={false}
@@ -192,7 +203,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               inputRef.current?.focus();
             }}
             tabIndex={-1}
-            className="absolute right-2 p-0.5 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            className="absolute right-2 p-0.5 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
             title="Limpar busca"
           >
             <X className="w-3 h-3" />
@@ -221,7 +233,8 @@ const NavIconButton: React.FC<NavIconButtonProps> = ({
       onClick={onClick}
       tabIndex={-1}
       title={title}
-      className={`p-1.5 rounded-md border transition-all flex items-center justify-center flex-shrink-0 ${
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      className={`p-1.5 rounded-md border transition-all flex items-center justify-center flex-shrink-0 cursor-pointer ${
         active
           ? 'bg-violet-600/30 text-violet-200 border-violet-500/40 shadow-sm shadow-violet-500/20'
           : 'bg-zinc-900/30 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 border-transparent'

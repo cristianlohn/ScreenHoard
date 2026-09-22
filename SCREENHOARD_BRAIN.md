@@ -127,9 +127,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 ## 5. Diretrizes de UX, Design & Layout Vertical macOS (v0.2.0)
 
-- **Geometria da Janela (Vertical Dock / Palette):**
+- **Geometria da Janela & Superfície Única (Vertical Dock / Palette):**
   - Redimensionada para **380px de largura** por **660px de altura** (`width: 380`, `height: 660` no Tauri e CSS), proporcionando a experiência ergonômica de palette lateral inspirada em utilitários macOS (Paste, CleanShot X, Canivete).
-  - Posicionamento inteligente no centro ou ancorado à lateral do monitor ativo onde o cursor se encontra.
+  - **Superfície Única sem Espaçamento Fantasma:** O container principal ocupa 100% da janela sem wrappers externos com margens ou paddings desnecessários (`m-0 p-0` em `main`), eliminando bordas duplas e lacunas invisíveis através de uma borda única, moderna e sutil: `border border-zinc-800/80 rounded-2xl bg-zinc-950/95 backdrop-blur-xl shadow-2xl`.
+  - **Memorização de Posição de Tela:** Ao arrastar o modal, as coordenadas `(x, y)` são persistidas no SQLite (`window_pos_x` e `window_pos_y`). Ao reabrir, o aplicativo valida se as coordenadas pertencem a algum monitor ativo e restaura a posição exata, centralizando caso o monitor tenha sido desconectado.
 
 - **Barra Superior & Navegação Rápida:**
   - Mini badge oficial com ícone `/icon.png` e tipografia em gradiente `from-violet-400 to-cyan-400`.
@@ -165,12 +166,29 @@ CREATE TABLE IF NOT EXISTS app_settings (
   - **Padrão de Ícones Nativos:** Gerados na raiz via `npx @tauri-apps/cli icon app-icon.png`, populando os formatos de sistema em `src-tauri/icons/` (ICO, ICNS, PNGs multi-resolução para Store/Appx) e `/icon.png` em `public/`.
 
 - **Navegação por Teclado:**
-  - `Setas (Cima / Baixo)`: Navegam verticalmente entre os cards da lista.
+  - `Setas (Cima / Baixo)`: Navegam verticalmente entre os cards da lista e retiram o foco do campo de busca.
   - `scrollIntoView({ block: 'nearest' })`: Mantém o card focado sempre visível.
   - `Enter`: Copia o item focado para o clipboard, exibe micro-feedback visual de ~120ms e oculta a janela.
-  - `Esc`: Fecha o painel de configurações/menus de contexto se abertos, ou oculta o modal.
+  - `Esc`: Fecha modais abertos (Configurações, Tradução Rápida), fecha menus contextuais ou oculta o modal principal.
   - `Delete`: Remove o item do histórico e apaga a mídia correspondente em disco.
-  - `P`: Alterna fixação (`is_pinned`) do item.
+  - `P`: Alterna fixação (`is_pinned`) do item (com `Ctrl/Alt` ou quando o foco estiver na lista).
+  - `Ctrl + T`: Dispara tradução rápida do item selecionado a qualquer momento (sem conflito com a busca).
+  - `T`: Dispara tradução quando a navegação por setas estiver ativa fora do campo de busca.
+  - `/`: Devolve o foco instantaneamente para a barra de busca Spotlight.
+
+- **Botões Explícitos de Tradução nos Cards e Barra Superior:**
+  - **Cards de Texto e Código (`ClipboardCard.tsx`):** Exibem botão visível e destacado com ícone `Languages` e label `"Traduzir"` (`bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/20`). Ao clicar, exibe spinner de carregamento ("Traduzindo...") e expande a gaveta com o texto traduzido e botão "Copiar Tradução".
+  - **Barra Superior (`SearchBar.tsx`):** Ícone `Languages` posicionado entre o botão de Gravação de Vídeo e Configurações. Ao clicar, traduz o item selecionado/mais recente; se nenhum texto existir no histórico, abre o `QuickTranslateModal` para tradução direta de qualquer texto digitado ou colado.
+  - **Modal de Tradução Rápida (`QuickTranslateModal.tsx`):** Painel translúcido em estilo Spotlight com alternância inteligente de direção (`PT ↔ EN`), contagem de caracteres e cópia direta para o clipboard.
+
+- **Arraste Nativo da Janela (Window Dragging):**
+  - O modal utiliza `decorations: false` e cantos arredondados sem a barra de título nativa do Windows.
+  - Permissões essenciais habilitadas em `capabilities/default.json`: `"core:window:allow-start-dragging"`, `"core:window:allow-set-position"`, `"core:window:allow-outer-position"`, `"core:window:default"`.
+  - A barra superior (`SearchBar.tsx`) implementa `onMouseDown={handleHeaderMouseDown}`, disparando `getCurrentWindow().startDragging()` caso o clique ocorra em áreas livres do cabeçalho ou logotipo (`cursor-grab active:cursor-grabbing`), ignorando botões e inputs (`target.closest('button, input, a, [data-no-drag]')`).
+
+- **Supressão Visual do Modal Durante Gravação de Tela (GIF):**
+  - Ao iniciar a gravação de tela, o modal do ScreenHoard é ocultado imediatamente pelo frontend chamando `await invoke('hide_modal_window')` antes de chamar `start_screen_recording`.
+  - No backend (`recorder.rs`), a thread de gravação aplica uma pausa de segurança de 250ms (`std::thread::sleep(Duration::from_millis(250))`) antes de iniciar o loop de captura de frames do `xcap`, garantindo que a animação de ocultação/unmap do Windows esteja 100% concluída e a área de trabalho limpa antes do primeiro quadro.
 
 ---
 
@@ -229,11 +247,97 @@ CREATE TABLE IF NOT EXISTS app_settings (
 - **Tratamento de Falhas & Offline:** Detecção de ausência de rede (`!navigator.onLine`) e retorno de mensagem amigável sem quebrar a interface.
 - **Cópia da Tradução:** Invocação do comando IPC `copy_text_to_clipboard` no backend com `set_ignore_next_update(true)` e `record_last_text(&text)` para garantir a invariante de prevenção de loops.
 
-### 10. Regras do Gravador de GIF em Streaming (v0.2.0)
-- **Controle Atômico de Estado:** `static IS_RECORDING: AtomicBool = AtomicBool::new(false);` garante cancelamento instantâneo concorrente sem deadlock ou travamento da UI.
-- **Streaming Direto sem Overhead de Memória:** Cada quadro capturado via `xcap` é imediatamente redimensionado para largura máxima de 960px, quantizado com NeuQuant (`Frame::from_rgba_speed(w, h, &mut pixels, 15)`) e enviado diretamente para o encoder LZW em disco. Nenhum buffer de frames em resolução total é mantido na memória RAM.
-- **Limite e Parada Manual:** O loop de gravação monitora o tempo decorrido frente ao limite configurado (`max_duration_secs`) e a flag `IS_RECORDING`. Se o usuário clicar em Stop, `stop_gif_recording()` altera `IS_RECORDING` para `false` e a thread secundária finaliza e fecha o encoder imediatamente.
+### 10. Regras do Gravador de GIF com Sincronização Precisa e Alta Performance (v0.2.0)
+- **Controle Atômico de Estado e Salvamento Síncrono:**
+  - `static IS_RECORDING: AtomicBool = AtomicBool::new(false);` e `static IS_SAVING: AtomicBool = AtomicBool::new(false);` gerenciam o ciclo completo.
+  - `is_recording_active()` retorna `IS_RECORDING || IS_SAVING`, refletindo com precisão tanto o loop de captura quanto a etapa de codificação e persistência no SQLite.
+  - `stop_and_wait_gif_recording(timeout: Duration)` encerra a gravação e bloqueia de forma cooperativa até que `IS_SAVING` seja falso, assegurando que os dados já estejam salvos no banco de dados.
+- **Auto-Finalização e Salvamento ao Abrir o Modal Principal:**
+  - Quando o usuário aciona o atalho global de alternância do modal (`Mouse 5` ou atalho de teclado em `hooks::toggle_main_modal`) ou invoca `show_modal_window`:
+    * Se `is_recording_active()` estiver ativo (mesmo durante pausa):
+      1. Oculta imediatamente a moldura vermelha (`hide_capture_border()`).
+      2. Oculta o overlay de gravação (`recorder_overlay`).
+      3. Invoca `stop_and_wait_gif_recording(Duration::from_secs(4))` para aguardar a gravação do GIF em disco e sua inserção na tabela `clipboard_items`.
+    * A janela principal `main` é restaurada/centralizada e exibida com `modal-opened`, exibindo o novo GIF imediatamente no topo do histórico sem atrasos ou descompassos de interface.
+- **Captura Nativa Ultra-Rápida via Win32 StretchBlt com HALFTONE (~1ms/frame):**
+  - **Gargalo Eliminado:** O redimensionamento via CPU (`image::imageops::resize`) dentro do loop de captura consumia centenas de milissegundos por quadro em modo de desenvolvimento (`npm run tauri dev` sem otimização), derrubando a taxa de captura para ~1.2 FPS (slideshow com 810ms de delay).
+  - **Pipeline Win32 GDI StretchBlt Direto (`recorder.rs`):**
+    * Coordenadas da tela calculadas a partir do monitor: `global_x = monitor.x() + ax`, `global_y = monitor.y() + ay`.
+    * Dimensões alvo calculadas uma única vez antes do loop: se `cw > 960`, `target_w = 960` e `target_h = (ch * 960) / cw`; caso contrário, resolução nativa 100% `(cw, ch)`.
+    * Alocação do bitmap de memória compatível diretamente no tamanho final `(target_w, target_h)`: `CreateCompatibleBitmap(hdc_screen, target_w, target_h)`.
+    * Configuração de interpolação por hardware de alta fidelidade: `SetStretchBltMode(hdc_mem, HALFTONE)` e `SetBrushOrgEx(hdc_mem, 0, 0, null)`.
+    * Captura e redimensionamento combinados em uma única chamada de GPU/driver Win32 via `StretchBlt(hdc_mem, 0, 0, target_w, target_h, hdc_screen, gx, gy, cw, ch, SRCCOPY)`, executando em ~1ms.
+    * Extração dos pixels via `GetDIBits` diretamente na resolução final com altura negativa `-(target_h as i32)` (top-down 32bpp) e swap in-place de BGRA para RGBA.
+    * Zero chamadas a algoritmos de resize em CPU dentro do loop.
+  - **Otimização de Dependências em Modo Dev (`Cargo.toml`):**
+    * Configuração `[profile.dev.package."*"] opt-level = 3` adicionada ao `Cargo.toml`, compilando crates gráficas pesadas (`image`, `gif`, `neuquant`) com otimização máxima mesmo durante o ciclo de desenvolvimento, acelerando o processamento em até 40x sem onerar o tempo de compilação da aplicação.
+  - **Timer Multimídia Win32 de Alta Precisão (`timeBeginPeriod(1)`):**
+    * No início da gravação, a thread invoca `timeBeginPeriod(1)` via RAII (`MultimediaTimerGuard`), reduzindo a granularidade do scheduler do Windows de 15.6ms para 1.0ms.
+    * Isso assegura que o delta-time sleep de 62ms execute com precisão cirúrgica de 1ms, eliminando oscilações na taxa de amostragem de frames e cravando 16 FPS reais sem jitter de agendamento do kernel.
+    * Ao finalizar ou em caso de encerramento precoce, o RAII drop invoca automaticamente `timeEndPeriod(1)`, restaurando a resolução do sistema sem riscos de vazamento.
+- **Desacoplamento de UI e Limpeza do SearchBar:**
+  - O `SearchBar.tsx` da janela principal não renderiza nenhum controle ou badge de gravação inline (`REC 00:xx / 01:00`), mantendo layout estável, sem deformação do cabeçalho nem compressão dos botões.
+  - A interface mantém sincronia de estado através do evento global Tauri `recording-status-changed`, garantindo que timers e variáveis locais sejam zerados no momento em que a gravação é encerrada.
+- **Sincronização Matemática de Tempo Real (Eliminação do Efeito Timelapse):**
+  - O delay entre quadros (`frame.delay`) no formato GIF é expresso em centésimos de segundo (1 cs = 10ms).
+  - O backend registra o instante exato de início (`start_time = Instant::now()`) e coleta os frames pré-processados em memória (`Vec<image::RgbaImage>`).
+  - Ao finalizar a captura (por timeout ou interrupção do usuário), calcula o delay médio real com base no tempo total decorrido do relógio:
+    ```rust
+    let total_elapsed_ms = start_time.elapsed().as_millis() as f64;
+    let frame_count = captured_frames.len();
+    let speed_mult = (SPEED_MULTIPLIER.load(Ordering::SeqCst) as f64 / 100.0).max(0.25);
+    let base_delay_cs = (total_elapsed_ms / frame_count as f64 / 10.0).round();
+    let adjusted_delay = (base_delay_cs / speed_mult).max(2.0).round() as u16;
+    ```
+  - Cada quadro gravado via `gif::Encoder` recebe `frame.delay = adjusted_delay`.
+  - Isso garante que uma gravação de 5.0 segundos no relógio demore rigorosamente 5.0 segundos para rodar a 1x (ou 2.5 segundos a 2x), mesmo com oscilações na taxa de frames sob alta carga de CPU.
+- **Transição de Estados e Barra Flutuante Segura (440x48px):**
+  - O gravador opera sob uma máquina de estados estrita:
+    1. `SELECTING`: Overlay fullscreen (`fullscreen: true`) apenas durante o desenho do retângulo com mira.
+    2. `ARMED` (Área selecionada, aguardando início):
+       - A janela `recorder_overlay` é redimensionada para 440x48px (`BAR_WIDTH = 440`, `BAR_HEIGHT = 48`) com **Posicionamento Resiliente e Clamp Vertical**:
+         * Se `area.y >= BAR_HEIGHT + 15`: posiciona acima (`area.y - BAR_HEIGHT - 10`).
+         * Se `(area.y + area.height + BAR_HEIGHT + 15) <= (screenH - 50)`: posiciona logo abaixo da área (`area.y + area.height + 10`).
+         * Se a área ocupar a altura integral do ecrã (sem espaço acima nem abaixo): **posicionamento interior de recurso no topo (`area.y + 16`)**. Graças ao `WDA_EXCLUDEFROMCAPTURE`, a barra flutuante é 100% invisível no GIF final.
+         * Clamp obrigatório contra todas as margens do ecrã e barra de tarefas do Windows: `safeBarLeft = Math.max(16, Math.min(barLeft, screenW - BAR_WIDTH - 16))` e `safeBarTop = Math.max(16, Math.min(barTop, screenH - BAR_HEIGHT - 55))`.
+         * Forçamento de visibilidade e Z-Index: ao sair de fullscreen, invoca sequencialmente `overlayWin.setAlwaysOnTop(true)`, `overlayWin.show()` e `overlayWin.setFocus()`.
+       - Exibe a moldura demarcadora vermelha nativa na tela chamando `show_capture_border`.
+       - Barra exibe: Dimensões (ex: "800 × 600"), seletor "1x | 2x", botão "▶ Gravar" (Play) e botão "✕" (Cancelar/Esc).
+    3. `RECORDING` / `PAUSED`:
+       - Disparado pelo clique em "▶ Gravar".
+       - Barra exibe:
+         * Badge: `● REC 00:0X` (vermelho pulsante) ou `⏸ PAUSA 00:0X` (âmbar fixo, timer congelado).
+         * Seletor `1x | 2x`.
+         * Botão alternável `⏸ Pausar` / `▶ Retomar`.
+         * Botão de término em destaque verde esmeralda `✔ Concluir` (`bg-emerald-600 hover:bg-emerald-500`) com `shrink-0` e `whitespace-nowrap`.
+       - `IS_PAUSED: AtomicBool`: durante a pausa, a thread de captura dorme 50ms sem coletar quadros e o tempo pausado é integralmente descontado de `total_elapsed_ms`, preservando o cálculo exato do delay dos frames.
+    4. `FINISHED`: Ao encerrar ou cancelar, invoca `hide_capture_border()` e oculta o overlay.
+  - **Invisibilidade Total na Gravação (`WDA_EXCLUDEFROMCAPTURE` - 0x11):**
+    - Tanto a janela `recorder_overlay` quanto a moldura nativa vermelha recebem `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` no Win32.
+    - Isso garante que a barra flutuante e a moldura vermelha nunca apareçam dentro do GIF gravado, mesmo se sobrepuserem a área selecionada, permitindo que a API de captura receba os pixels limpos das janelas de fundo.
+  - **Moldura Vermelha Click-Through Nativa (`recorder.rs`):**
+    - Criada em thread Win32 dedicada com estilos `WS_POPUP | WS_VISIBLE` e estilos estendidos `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`.
+    - Fundo transparente configurado via `SetLayeredWindowAttributes(hwnd, 0x00000000, 0, LWA_COLORKEY)` e borda vermelha fina de 2px desenhada via `FrameRect`.
+    - A flag `WS_EX_TRANSPARENT` garante que 100% dos cliques do mouse atravessem a moldura sem nenhum bloqueio de interação nas janelas sob a gravação.
+  - Permissões obrigatórias em `capabilities/default.json`: `"core:window:allow-set-size"`, `"core:window:allow-set-fullscreen"`, `"core:window:allow-inner-size"`, `"core:window:allow-set-always-on-top"`, `"core:window:allow-set-position"`, `"core:window:allow-outer-position"`.
+- **Desacoplamento de Captura e Codificação:**
+  - Durante o loop de gravação, os frames são apenas recortados/capturados e armazenados em memória (`Vec<image::RgbaImage>`), evitando que a quantização pesada NeuQuant dispute CPU e cause atrasos na captura de frames.
+  - A codificação e escrita LZW no arquivo físico ocorrem sequencialmente após a finalização do loop.
 - **Compatibilidade com SQLite:** O registro é inserido como `type = "image"` para respeitar a CHECK constraint do banco (`'text', 'image', 'link', 'color'`), com metadados estruturados `format: "gif"` e `duration_secs`.
+
+### 11. Preservação de GIFs Animados no Clipboard do Windows (`clipboard_win.rs`) (v0.2.0)
+- **Problema de Imagem Estática:** Injetar GIFs via buffers comuns de imagem (`CF_DIB` / `arboard::set_image`) descarta os múltiplos quadros do arquivo, fazendo com que comunicadores e navegadores colem apenas o primeiro frame estático.
+- **Injeção Nativa Dual (`CF_HDROP` + Formato `"GIF"`):**
+  - Para arquivos `.gif`, o ScreenHoard aloca a estrutura `DROPFILES` com `fWide = 1` e escreve o caminho absoluto em UTF-16 terminado em duplo nulo, injetando o formato `CF_HDROP` (ID 15).
+  - Simultaneamente, lê os bytes brutos do arquivo GIF em disco e os injeta sob o formato registrado `RegisterClipboardFormatW("GIF")`.
+  - Isso garante compatibilidade universal: comunicadores (Telegram, Discord, Slack, WhatsApp), navegadores e o Windows Explorer colam o arquivo animado completo sem perda de quadros ou qualidade.
+
+### 12. Arraste de Janela sem Borda e Persistência de Posição (v0.2.0)
+- **Superfície Única sem Borda Dupla:** O layout deve ocupar 100% da área da janela sem wrappers externos com margens ou paddings fantasmas (`m-0 p-0` em `main`), garantindo uma única borda elegante `border border-zinc-800/80 rounded-2xl bg-zinc-950/95 backdrop-blur-xl shadow-2xl`.
+- **Arraste Confiável via `startDragging`:** Com permissão `"core:window:allow-start-dragging"` em `capabilities/default.json`, a barra superior utiliza `getCurrentWindow().startDragging()` no evento `onMouseDown` para cliques fora de elementos interativos (`button, input, a, [data-no-drag]`).
+- **Persistência e Restauração de Posição no SQLite:**
+  - O aplicativo escuta `WindowEvent::Moved(pos)` no setup e também lê `window.outer_position()` em `hide_modal_window`, gravando `window_pos_x` e `window_pos_y` na tabela `app_settings`.
+  - Em `show_modal_window` e `hooks::toggle_main_modal`, a função `restore_or_center_window` valida se as coordenadas salvas interceptam a área útil de algum monitor disponível (`window.available_monitors()`). Se válido, restaura as coordenadas exatas; se inválido ou inexistente, centraliza a janela.
 
 ---
 
@@ -244,6 +348,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 | `src-tauri/src/db.rs` | Conexão SQLite (WAL), DDL, queries parametrizadas e exclusão física de mídias |
 | `src-tauri/src/screenshot.rs` | Captura multi-monitor via xcap, cursor tracking e injeção arboard |
 | `src-tauri/src/recorder.rs` | Gravação nativa de tela em GIF com streaming, downscale 960px e codificação LZW |
+| `src-tauri/src/clipboard_win.rs` | Cópia nativa de GIFs para o clipboard via CF_HDROP e formato GIF registrado |
 | `src-tauri/src/hooks.rs` | Hooks Win32 `WH_MOUSE_LL` / `WH_KEYBOARD_LL` em thread dedicada com supressão |
 | `src-tauri/src/tray.rs` | System Tray Icon, menu de contexto e dispatch de eventos |
 | `src-tauri/src/autostart.rs` | Leitura e gravação na chave `HKCU Run` do Registro do Windows |

@@ -24,7 +24,19 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,
-        "center": true
+        "center": true,
+        "devtools": true
+      },
+      {
+        "label": "recorder_overlay",
+        "title": "ScreenHoard Recorder Overlay",
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "fullscreen": true,
+        "shadow": false
       }
     ],
     "security": {

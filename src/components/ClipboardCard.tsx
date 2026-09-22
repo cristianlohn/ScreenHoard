@@ -301,15 +301,17 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
 
           {/* Ações da Pílula */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Botão de Tradução Rápida */}
+            {/* Botão de Tradução Rápida Visível na Pílula */}
             {(item.type === 'text' || isCode) && (
               <button
                 onClick={handleTranslate}
+                disabled={isTranslating}
                 tabIndex={-1}
-                className="p-1 rounded text-zinc-500 hover:text-cyan-300 hover:bg-zinc-800/80 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Traduzir texto (T)"
+                className="bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/20 px-1.5 py-0.5 rounded-md text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95"
+                title="Traduzir texto (Ctrl+T)"
               >
-                <Languages className="w-3 h-3" />
+                <Languages className={`w-3 h-3 ${isTranslating ? 'animate-spin' : 'text-cyan-400'}`} />
+                <span className="font-medium">{isTranslating ? '...' : 'Traduzir'}</span>
               </button>
             )}
 
@@ -338,7 +340,7 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
         <>
           {/* Cabeçalho do Card */}
           <div className="flex items-center justify-between text-[11px] text-zinc-400">
-            <div className="flex items-center gap-1.5 truncate max-w-[75%]">
+            <div className="flex items-center gap-1.5 truncate max-w-[70%]">
               {item.type === 'image' && (
                 isGif ? (
                   <Film className="w-3.5 h-3.5 text-pink-400 flex-shrink-0" />
@@ -376,20 +378,24 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
             </div>
 
             {/* Ações Rápidas do Cabeçalho */}
-            <div className="flex items-center gap-1">
-              {/* Botão de Tradução Rápida */}
+            <div className="flex items-center gap-1.5">
+              {/* Botão Explícito de Tradução */}
               {(item.type === 'text' || isCode) && (
                 <button
                   onClick={handleTranslate}
+                  disabled={isTranslating}
                   tabIndex={-1}
-                  className={`p-1 rounded transition-colors ${
+                  className={`bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/20 px-2 py-0.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 ${
                     showTranslation
-                      ? 'text-cyan-400 bg-cyan-400/10'
-                      : 'text-zinc-500 hover:text-cyan-300 hover:bg-zinc-800/80 opacity-0 group-hover:opacity-100'
+                      ? 'bg-violet-600/30 text-violet-200 border-violet-500/40 shadow-sm shadow-violet-500/20'
+                      : ''
                   }`}
-                  title="Traduzir texto (T)"
+                  title="Traduzir texto (Ctrl+T)"
                 >
-                  <Languages className="w-3 h-3" />
+                  <Languages className={`w-3.5 h-3.5 ${isTranslating ? 'animate-spin text-violet-300' : 'text-cyan-400'}`} />
+                  <span className="text-[11px] font-medium">
+                    {isTranslating ? 'Traduzindo...' : 'Traduzir'}
+                  </span>
                 </button>
               )}
 

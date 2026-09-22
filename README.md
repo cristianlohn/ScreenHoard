@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="#-português">Português</a> • <a href="#-english">English</a>
+  <a href="#-português">Português</a> • <a href="#-english">English</a> • <a href="USER_GUIDE.md">📖 Manual de Uso</a>
 </p>
 
 ---
@@ -29,6 +29,8 @@
 ### 📖 Visão Geral
 
 O **ScreenHoard** é um utilitário de produtividade de alto desempenho para Windows. Desenvolvido sobre **Tauri v2** e **Rust**, ele intercepta eventos de mouse em nível de sistema (`WH_MOUSE_LL`) e gerencia todo o histórico da área de transferência (textos, imagens, links e cores) armazenando os dados em um banco de dados **SQLite** local.
+
+> 💡 **Guia Rápido:** Consulte o [Manual de Uso & Guia de Produtividade](USER_GUIDE.md) para aprender a capturar evidências em GIF, utilizar o tradutor integrado e dominar todos os atalhos.
 
 A interface gráfica foi construída em **React 19**, **TypeScript** e **Tailwind CSS**, proporcionando um modal translúcido com estética *Dark Glassmorphism* / *Mica* sem bordas nativas, com animações suaves e tempo de resposta instantâneo.
 
@@ -389,6 +391,7 @@ ScreenHoard/
 ├── postcss.config.js
 ├── README.md
 ├── SCREENHOARD_BRAIN.md
+├── USER_GUIDE.md
 ├── tailwind.config.ts
 ├── tsconfig.json
 ├── vite.config.ts

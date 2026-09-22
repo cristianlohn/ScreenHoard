@@ -1,16 +1,15 @@
-use crate::db::AppSettings;
+use crate::db::{self, AppSettings};
 use crate::screenshot;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use tauri::{AppHandle, Emitter, Manager};
-use windows_sys::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
+use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetCursorPos, GetMessageW, SetWindowsHookExW,
+    CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW,
     TranslateMessage, UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT,
     WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_SYSKEYDOWN, WM_XBUTTONDOWN, WM_XBUTTONUP,
 };
-use xcap::Monitor;
 
 /// Mapeamento de atalhos globais ativos em memória.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,6 +175,28 @@ unsafe extern "system" fn keyboard_hook_proc(
             let kbd = *(l_param as *const KBDLLHOOKSTRUCT);
             let vk = kbd.vkCode as u32;
 
+            // Se a tecla for Esc (0x1B):
+            // 1. Se a gravação de GIF estiver ativa, interrompe e salva
+            // 2. Se o overlay estiver visível em modo seleção, cancela e fecha
+            if vk == 0x1B {
+                if crate::recorder::is_recording_active() {
+                    crate::recorder::stop_gif_recording();
+                    if let Some(ctx) = HOOK_CONTEXT.get() {
+                        if let Some(overlay) = ctx.app_handle.get_webview_window("recorder_overlay") {
+                            let _ = overlay.hide();
+                        }
+                    }
+                    return 1;
+                } else if let Some(ctx) = HOOK_CONTEXT.get() {
+                    if let Some(overlay) = ctx.app_handle.get_webview_window("recorder_overlay") {
+                        if overlay.is_visible().unwrap_or(false) {
+                            let _ = overlay.hide();
+                            return 1;
+                        }
+                    }
+                }
+            }
+
             if let Some(ctx) = HOOK_CONTEXT.get() {
                 if let Ok(bindings) = ctx.bindings.read() {
                     let is_screenshot = match_key_trigger(&bindings.screenshot, vk);
@@ -207,49 +228,44 @@ unsafe extern "system" fn keyboard_hook_proc(
     unsafe { CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param) }
 }
 
-/// Alterna a visibilidade da janela principal, centralizando-a nas coordenadas do monitor ativo antes de exibir.
+/// Alterna a visibilidade da janela principal, restaurando a posição salva se válida, ou centralizando antes de exibir.
 pub fn toggle_main_modal(app_handle: &AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
         let is_visible = window.is_visible().unwrap_or(false);
 
         if is_visible {
+            if let Ok(pos) = window.outer_position() {
+                if let Some(state) = app_handle.try_state::<crate::AppState>() {
+                    if let Ok(conn) = state.db.lock() {
+                        let _ = db::set_setting(&conn, "window_pos_x", &pos.x.to_string());
+                        let _ = db::set_setting(&conn, "window_pos_y", &pos.y.to_string());
+                    }
+                }
+            }
             let _ = window.hide();
         } else {
-            // 1. Obter coordenadas globais atuais do mouse
-            let cursor_pt = unsafe {
-                let mut pt = POINT { x: 0, y: 0 };
-                GetCursorPos(&mut pt);
-                pt
-            };
-
-            // 2. Identificar geometria do monitor que contém o cursor
-            let (mon_x, mon_y, mon_w, mon_h) = if let Ok(m) = Monitor::from_point(cursor_pt.x, cursor_pt.y) {
-                (m.x(), m.y(), m.width() as i32, m.height() as i32)
-            } else if let Ok(monitors) = Monitor::all() {
-                if let Some(primary) = monitors.iter().find(|m| m.is_primary()) {
-                    (primary.x(), primary.y(), primary.width() as i32, primary.height() as i32)
-                } else if let Some(first) = monitors.first() {
-                    (first.x(), first.y(), first.width() as i32, first.height() as i32)
-                } else {
-                    (0, 0, 1920, 1080)
+            // Se houver gravação ativa (ou pausada), encerra e aguarda o salvamento completo
+            if crate::recorder::is_recording_active() {
+                crate::recorder::hide_capture_border();
+                let _ = app_handle.emit("recording-status-changed", serde_json::json!({ "is_recording": false }));
+                if let Some(overlay) = app_handle.get_webview_window("recorder_overlay") {
+                    let _ = overlay.hide();
                 }
+                crate::recorder::stop_and_wait_gif_recording(std::time::Duration::from_secs(4));
             } else {
-                (0, 0, 1920, 1080)
-            };
+                crate::recorder::hide_capture_border();
+                if let Some(overlay) = app_handle.get_webview_window("recorder_overlay") {
+                    if overlay.is_visible().unwrap_or(false) {
+                        let _ = overlay.hide();
+                    }
+                }
+            }
 
-            // 3. Obter tamanho da janela e calcular centro do monitor ativo
-            let win_size = window
-                .outer_size()
-                .unwrap_or(tauri::PhysicalSize { width: 380, height: 660 });
-
-            let center_x = mon_x + (mon_w - win_size.width as i32) / 2;
-            let center_y = mon_y + (mon_h - win_size.height as i32) / 2;
-
-            // 4. Reposicionar a janela antes de exibir e focar
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: center_x,
-                y: center_y,
-            }));
+            if let Some(state) = app_handle.try_state::<crate::AppState>() {
+                crate::restore_or_center_window(&window, &state.db);
+            } else {
+                let _ = window.center();
+            }
 
             let _ = window.show();
             let _ = window.set_focus();
