@@ -1,6 +1,6 @@
 [package]
 name = "screen-hoard"
-version = "0.2.0"
+version = "0.3.0"
 description = "Utilitário nativo de histórico de área de transferência e screenshots para Windows"
 authors = ["ScreenHoard Team"]
 edition = "2021"
