@@ -5,7 +5,7 @@ use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
 
 /// Captura uma região física da tela utilizando GDI Win32 diretamente em memória.
 #[cfg(target_os = "windows")]
-fn capture_screen_rect_gdi(x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u8>, String> {
+pub fn capture_screen_rect_gdi(x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u8>, String> {
     if width <= 0 || height <= 0 {
         return Err("Dimensões inválidas para captura de tela".to_string());
     }
@@ -92,7 +92,7 @@ fn capture_screen_rect_gdi(x: i32, y: i32, width: i32, height: i32) -> Result<Ve
 }
 
 #[cfg(not(target_os = "windows"))]
-fn capture_screen_rect_gdi(_x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u8>, String> {
+pub fn capture_screen_rect_gdi(_x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u8>, String> {
     Err("Captura de tela GDI suportada apenas no Windows".to_string())
 }
 

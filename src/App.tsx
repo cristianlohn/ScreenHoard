@@ -27,6 +27,7 @@ export const App: React.FC = () => {
     counts,
     startRecording,
     startOcrSnip,
+    startColorPicker,
   } = useClipboardHistory();
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -110,6 +111,13 @@ export const App: React.FC = () => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'T' || e.key === 't')) {
       e.preventDefault();
       startOcrSnip();
+      return;
+    }
+
+    // Atalho Ctrl+Shift+C para Conta-gotas de Tela (Color Picker)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+      e.preventDefault();
+      startColorPicker();
       return;
     }
 
@@ -224,6 +232,7 @@ export const App: React.FC = () => {
           onToggleSettings={() => setIsSettingsOpen(!isSettingsOpen)}
           onStartRecording={() => startRecording()}
           onStartOcrSnip={() => startOcrSnip()}
+          onStartColorPicker={() => startColorPicker()}
           onQuickTranslate={handleTriggerTranslate}
         />
 

@@ -209,7 +209,26 @@ unsafe extern "system" fn keyboard_hook_proc(
                     if let Some(ctx) = HOOK_CONTEXT.get() {
                         let app = ctx.app_handle.clone();
                         std::thread::spawn(move || {
-                            let _ = crate::open_recorder_overlay_internal(&app, Some("ocr_snip".to_string()));
+                            let _ = crate::open_recorder_overlay_internal(&app, Some("snip".to_string()));
+                        });
+                        return 1;
+                    }
+                }
+            }
+
+            // Atalho global Ctrl+Shift+C para Conta-gotas de Tela (Color Picker)
+            if vk == 0x43 { // Tecla 'C'
+                let ctrl_down = unsafe {
+                    (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
+                };
+                let shift_down = unsafe {
+                    (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x10) as u16 & 0x8000) != 0
+                };
+                if ctrl_down && shift_down {
+                    if let Some(ctx) = HOOK_CONTEXT.get() {
+                        let app = ctx.app_handle.clone();
+                        std::thread::spawn(move || {
+                            let _ = crate::open_recorder_overlay_internal(&app, Some("color_picker".to_string()));
                         });
                         return 1;
                     }

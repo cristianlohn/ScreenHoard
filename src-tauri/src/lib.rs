@@ -2,6 +2,7 @@ pub mod autostart;
 pub mod cleaner;
 pub mod clipboard_listener;
 pub mod clipboard_win;
+pub mod color_picker;
 pub mod db;
 pub mod hooks;
 pub mod ocr;
@@ -632,6 +633,174 @@ async fn snip_ocr_rect(x: i32, y: i32, width: i32, height: i32) -> Result<String
     ocr::recognize_text_from_screen_rect(x, y, width, height).await
 }
 
+/// Captura a região física recortada via GDI, salva como PNG em media/{uuid}.png,
+/// injeta no Clipboard do Windows (CF_DIBV5 / arboard) e persiste no SQLite como type = 'image'.
+#[tauri::command]
+async fn save_snip_image(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<String, String> {
+    if width <= 0 || height <= 0 {
+        return Err("Dimensões inválidas para recorte de tela".to_string());
+    }
+
+    let db_conn = state.db.clone();
+    let app = app_handle.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        // 1. Capturar a região física via GDI (em formato BGRA 32bpp)
+        let bgra_pixels = ocr::capture_screen_rect_gdi(x, y, width, height)?;
+
+        // 2. Converter BGRA para RGBA para compatibilidade total com PNG e arboard
+        let total_pixels = (width as usize) * (height as usize);
+        let mut rgba_pixels = Vec::with_capacity(total_pixels * 4);
+        for chunk in bgra_pixels.chunks_exact(4) {
+            rgba_pixels.push(chunk[2]); // R
+            rgba_pixels.push(chunk[1]); // G
+            rgba_pixels.push(chunk[0]); // B
+            rgba_pixels.push(255);      // A (opaco)
+        }
+
+        // 3. Salvar como PNG comprimido em disco (%APPDATA%/ScreenHoard/media/{uuid}.png)
+        let file_id = uuid::Uuid::new_v4().to_string();
+        let file_name = format!("{}.png", file_id);
+        let media_dir = db::get_media_dir();
+        let file_path = media_dir.join(&file_name);
+
+        let img_buffer: image::RgbaImage = image::ImageBuffer::from_raw(
+            width as u32,
+            height as u32,
+            rgba_pixels.clone(),
+        )
+        .ok_or_else(|| "Falha ao instanciar buffer de imagem RGBA".to_string())?;
+
+        img_buffer
+            .save_with_format(&file_path, image::ImageFormat::Png)
+            .map_err(|e| format!("Falha ao salvar PNG no disco: {e}"))?;
+
+        let size_bytes = std::fs::metadata(&file_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        // 4. Injetar o Bitmap no Clipboard (CF_DIBV5) com supressão de auto-captura
+        crate::clipboard_listener::set_ignore_next_update(true);
+        crate::clipboard_listener::record_last_image(width as u32, height as u32, &rgba_pixels);
+
+        let img_data = arboard::ImageData {
+            width: width as usize,
+            height: height as usize,
+            bytes: std::borrow::Cow::Owned(rgba_pixels),
+        };
+        if let Err(e) = set_image_with_retry(img_data) {
+            eprintln!("[ScreenHoard] Aviso ao injetar recorte no clipboard: {}", e);
+        }
+
+        // 5. Persistir no SQLite como type = 'image'
+        let rel_path = format!("media/{}", file_name);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        let new_item = db::NewClipboardItem {
+            id: file_id.clone(),
+            item_type: "image".to_string(),
+            title: Some("Recorte de Tela".to_string()),
+            content: Some(rel_path.clone()),
+            preview_url: Some(rel_path.clone()),
+            metadata: Some(serde_json::json!({
+                "source": "snip_screenshot",
+                "width": width,
+                "height": height,
+                "size_bytes": size_bytes,
+                "file_format": "png",
+            })),
+            is_pinned: 0,
+            created_at: now_ms,
+        };
+
+        if let Ok(conn) = db_conn.lock() {
+            if let Ok(inserted) = db::insert_clipboard_item(&conn, &new_item) {
+                let _ = app.emit("clipboard-updated", &inserted);
+                let _ = app.emit(
+                    "clipboard-event",
+                    serde_json::json!({
+                        "action": "item_added",
+                        "item": inserted,
+                        "item_id": file_id,
+                    }),
+                );
+            }
+        }
+
+        Ok(rel_path)
+    })
+    .await
+    .map_err(|e| format!("Falha na execução da task: {e}"))?
+}
+
+/// Captura a cor do pixel sob o cursor em HEX e RGB, com mini-bitmap da vizinhança para zoom.
+#[tauri::command]
+fn get_pixel_color_at(x: i32, y: i32) -> Result<color_picker::ColorPickerResult, String> {
+    color_picker::capture_pixel_color(x, y)
+}
+
+/// Salva a cor capturada pelo conta-gotas na área de transferência e no histórico do SQLite.
+#[tauri::command]
+fn save_color_to_history(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    hex: String,
+    r: u8,
+    g: u8,
+    b: u8,
+) -> Result<(), String> {
+    copy_text_direct(&hex)?;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let item_id = uuid::Uuid::new_v4().to_string();
+
+    let new_item = db::NewClipboardItem {
+        id: item_id.clone(),
+        item_type: "color".to_string(),
+        title: Some(format!("Cor {}", hex)),
+        content: Some(hex.clone()),
+        preview_url: None,
+        metadata: Some(serde_json::json!({
+            "source": "color_picker",
+            "color_hex": hex,
+            "r": r,
+            "g": g,
+            "b": b,
+        })),
+        is_pinned: 0,
+        created_at: now_ms,
+    };
+
+    if let Ok(conn) = state.db.lock() {
+        if let Ok(inserted) = db::insert_clipboard_item(&conn, &new_item) {
+            let _ = app_handle.emit("clipboard-updated", &inserted);
+            let _ = app_handle.emit(
+                "clipboard-event",
+                serde_json::json!({
+                    "action": "item_added",
+                    "item": inserted,
+                    "item_id": item_id,
+                }),
+            );
+        }
+    }
+
+    Ok(())
+}
+
 /* ==========================================================================
    Inicialização da Aplicação
    ========================================================================== */
@@ -744,6 +913,9 @@ pub fn run() {
             set_autostart_enabled,
             extract_text_from_image,
             snip_ocr_rect,
+            get_pixel_color_at,
+            save_color_to_history,
+            save_snip_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ScreenHoard application");

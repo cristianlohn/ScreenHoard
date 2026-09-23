@@ -55,6 +55,7 @@ export interface UseClipboardHistoryReturn {
   startRecording: (customMaxSecs?: number) => Promise<void>;
   stopRecording: () => Promise<void>;
   startOcrSnip: () => Promise<void>;
+  startColorPicker: () => Promise<void>;
   counts: {
     all: number;
     image: number;
@@ -349,13 +350,23 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
     }
   }, []);
 
-  // Inicia o processo de Captura Rápida de Texto (Snip OCR)
+  // Inicia o processo de Recorte de Imagem da Tela (Snip Screenshot)
   const startOcrSnip = useCallback(async () => {
     try {
       await invoke('hide_modal_window');
-      await invoke('open_recorder_overlay', { mode: 'ocr_snip' });
+      await invoke('open_recorder_overlay', { mode: 'snip' });
     } catch (err) {
-      console.error('[ScreenHoard] Falha ao abrir overlay para Snip OCR:', err);
+      console.error('[ScreenHoard] Falha ao abrir overlay para Recorte de Tela:', err);
+    }
+  }, []);
+
+  // Inicia o processo de Conta-gotas de Tela (Color Picker)
+  const startColorPicker = useCallback(async () => {
+    try {
+      await invoke('hide_modal_window');
+      await invoke('open_recorder_overlay', { mode: 'color_picker' });
+    } catch (err) {
+      console.error('[ScreenHoard] Falha ao abrir overlay para Color Picker:', err);
     }
   }, []);
 
@@ -383,6 +394,7 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
     startRecording,
     stopRecording,
     startOcrSnip,
+    startColorPicker,
     counts,
   };
 }

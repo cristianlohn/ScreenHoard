@@ -368,13 +368,34 @@ CREATE TABLE IF NOT EXISTS app_settings (
   - Cards de imagem estática (`type === 'image' && !isGif`) contam com o botão "Copiar Texto" (ícone `ScanText`) no cabeçalho e opção "Extrair Texto (OCR)" no menu de contexto.
   - Ao clicar, o texto extraído é imediatamente injetado na área de transferência com supressão de auto-captura garantida e micro-feedback visual ("• Copiado!").
   - Gaveta retrátil exibe o texto extraído com suporte a rolagem para textos longos, botões para "Copiar Novamente" e "Traduzir Texto" (integrado diretamente ao motor multi-idioma de tradução). Se nenhum texto for identificado, exibe "Nenhum texto identificado nesta imagem".
-- **Captura Rápida de Texto estilo PowerToys Text Extractor (Snip OCR em Memória) (v0.3.0):**
-  - **Gatilhos de Ativação:** Botão dedicado `ScanText` (size 16) no cabeçalho superior (`SearchBar.tsx`) ao lado do botão de vídeo e atalho universal `Ctrl + Shift + T` registrado tanto localmente na janela (`App.tsx`) quanto globalmente em baixo nível no Windows via `WH_KEYBOARD_LL` (`hooks.rs`).
-  - **Modo `ocr_snip` no Overlay (`RecorderOverlay.tsx`):** A janela `recorder_overlay` é acionada em modo fullscreen com `cursor-crosshair` e banner informativo *"Selecione o texto para extrair • [Esc] Cancelar"*.
-  - **Captura GDI 1:1 Direta em Memória (`ocr.rs`):** Ao soltar o mouse (área >= 10x10 px), as coordenadas são escaladas pelo DPI do monitor (`window.devicePixelRatio`) e repassadas ao comando `snip_ocr_rect`. No Win32, utiliza `GetDC(NULL)`, `CreateCompatibleBitmap`, `BitBlt` 1:1 e `GetDIBits` para obter os pixels físicos em BGRA nativo sem criar nenhum arquivo intermediário em disco (zero disk I/O).
-  - **Ponte em Memória para WinRT:** Os bytes BGRA são encapsulados em memória com um cabeçalho BMP de 54 bytes e enviados ao pipeline `InMemoryRandomAccessStream` + `BitmapDecoder` + `OcrEngine`.
-  - **Injeção Instantânea no Clipboard com Supressão:** O texto reconhecido é imediatamente injetado como `CF_UNICODETEXT` através de `copy_text_direct`, ativando a flag `set_ignore_next_update(true)` e registrando o hash em `record_last_text` para impedir loops infinitos no listener nativo.
-  - **Feedback Visual Fluido:** Exibe badge de sucesso *"Texto copiado para a área de transferência!"* (ou aviso de nenhum texto) por 600ms e fecha o overlay automaticamente.
+- **Captura Rápida Recortada de Imagem de Tela (Snip Screenshot) (v0.3.0):**
+  - **Gatilhos de Ativação:** Botão dedicado `Scissors` / recorte no cabeçalho superior (`SearchBar.tsx`) e atalho universal `Ctrl + Shift + T` registrado tanto localmente na janela (`App.tsx`) quanto globalmente em baixo nível no Windows via `WH_KEYBOARD_LL` (`hooks.rs`).
+  - **Modo `snip` no Overlay (`RecorderOverlay.tsx`):** A janela `recorder_overlay` é acionada em modo fullscreen com `cursor-crosshair` e banner informativo *"Arraste para selecionar a área do recorte • [Esc] Cancelar"*. Régua/badge flutuante dinâmica exibe as dimensões lógicas e físicas em pixels reais (ex: `450 × 320 px (DPI: 563 × 400)`) com posicionamento inteligente e inversão vertical ao atingir as bordas da tela.
+  - **Captura GDI 1:1 e Gravação em Disco (`save_snip_image`):** Ao soltar o mouse (área >= 10x10 px), as coordenadas físicas são enviadas ao comando backend `save_snip_image`. Via GDI Win32 (`GetDC`, `CreateCompatibleBitmap`, `BitBlt` 1:1 e `GetDIBits`), os pixels físicos são extraídos da tela (isenta de captura via `WDA_EXCLUDEFROMCAPTURE`), convertidos de BGRA para RGBA e codificados em PNG salvo em `media/{uuid}.png`.
+  - **Injeção no Clipboard Nativo (`CF_DIBV5`):** Os pixels descompactados são injetados diretamente na área de transferência do Windows através de `set_image_with_retry`, garantindo compatibilidade universal com colar (`Ctrl+V`) em qualquer aplicativo.
+  - **Persistência no Histórico SQLite e Supressão de Loop:** O recorte é registrado na tabela `clipboard_items` com `type = 'image'`, dimensões e metadados estruturados, disparando os eventos `clipboard-updated` e `clipboard-event`. Ativa `set_ignore_next_update(true)` e registra o hash da imagem para suprimir capturas duplicadas pelo listener nativo.
+  - **Feedback Visual Fluido:** Exibe badge de sucesso *"Recorte copiado para a área de transferência!"* e fecha o overlay suavemente.
+
+### 14. Conta-gotas de Tela em Tempo Real (Color Picker Win32) (v0.3.0)
+- **Ativação e Atalho Global:**
+  - Acionado pelo botão `Pipette` no cabeçalho superior (`SearchBar.tsx`) ou via atalho universal `Ctrl + Shift + C`, registrado tanto na janela React (`App.tsx`) quanto em baixo nível no Windows via hook de teclado `WH_KEYBOARD_LL` (`hooks.rs`).
+- **Modo `color_picker` no Overlay (`RecorderOverlay.tsx`):**
+  - Janela `recorder_overlay` exibida com fundo 100% transparente (`bg-transparent`) para manter a fidelidade cromática nativa da área de trabalho do usuário.
+  - Banner informativo superior *"Conta-gotas • Clique para copiar a cor • [Esc] Cancelar"*.
+- **Leitura Nativa Win32 GDI & Lupa de Zoom (`color_picker.rs`):**
+  - Captura o DC da tela virtual via `GetDC(HWND(0))` / `GetDC(null)`.
+  - Lê a cor exata do pixel sob o cursor utilizando `GetPixel(hdc, x, y)`, extraindo os canais R, G, B da estrutura `COLORREF` (`0x00BBGGRR`) e formatando a string HEX canônica (ex: `"#3B82F6"`).
+  - Extrai um mini-bitmap 15x15 px ao redor do cursor via `BitBlt` e `GetDIBits` encapsulado em cabeçalho BMP de 54 bytes e serializado em Data URL Base64 (`data:image/bmp;base64,...`).
+  - Throttling inteligente no frontend garantindo no máximo 1 IPC in-flight por vez sem travamento de renderização e mantendo a movimentação da lupa em tempo real a 60+ FPS.
+- **Lupa Circular Flutuante com Retículo de Precisão:**
+  - Lente circular de 112px com borda dupla iluminada e zoom pixelado (`[image-rendering:pixelated]`), ampliando cada pixel como um bloco nítido.
+  - Retículo de mira centralizado cirurgicamente no pixel exato sob a ponta do cursor, com caixa de mira 9x9px e linhas em cruz.
+  - Badge dinâmica fixada à lupa exibindo amostra da cor, código HEX em destaque mono e valores RGB formatados. Posicionamento inteligente com inversão vertical automática ao aproximar-se do limite inferior da tela.
+- **Injeção no Clipboard e Persistência no Histórico SQLite:**
+  - Ao clicar com o botão esquerdo:
+    1. Injeta o código HEX na área de transferência através de `copy_text_direct(&hex)` com supressão de auto-captura (`set_ignore_next_update(true)` e registro de hash em `record_last_text`).
+    2. Insere o item na tabela `clipboard_items` com `type = 'color'`, `title = "Cor #HEX"`, metadados estruturados `{ "color_hex": hex, "r": r, "g": g, "b": b, "source": "color_picker" }`, emitindo os eventos `clipboard-updated` e `clipboard-event` para sincronia imediata na lista.
+    3. Exibe feedback visual "Cor copiada para a área de transferência!" com swatch de cor e fecha o overlay suavemente.
 
 ---
 
@@ -387,6 +408,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 | `src-tauri/src/recorder.rs` | Gravação nativa de tela em GIF com streaming, downscale 960px e codificação LZW |
 | `src-tauri/src/clipboard_win.rs` | Cópia nativa de GIFs para o clipboard via CF_HDROP e formato GIF registrado |
 | `src-tauri/src/ocr.rs` | Extração nativa de texto via Windows.Media.Ocr, streams de memória WinRT e conversão Bgra8 |
+| `src-tauri/src/color_picker.rs` | Leitura de pixels via GDI Win32 (GetPixel), extração de mini-bitmap 15x15 e encoding BMP/Base64 para lupa de zoom |
 | `src-tauri/src/hooks.rs` | Hooks Win32 `WH_MOUSE_LL` / `WH_KEYBOARD_LL` em thread dedicada com supressão |
 | `src-tauri/src/tray.rs` | System Tray Icon, menu de contexto e dispatch de eventos |
 | `src-tauri/src/autostart.rs` | Leitura e gravação na chave `HKCU Run` do Registro do Windows |

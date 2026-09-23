@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
-import { Check, Zap, Monitor, Play, Pause, X, ScanText } from 'lucide-react';
+import { Check, Zap, Monitor, Play, Pause, X, ScanText, Pipette } from 'lucide-react';
 
 interface Rect {
   x: number;
@@ -12,8 +12,16 @@ interface Rect {
   height: number;
 }
 
+interface ColorData {
+  hex: string;
+  r: number;
+  g: number;
+  b: number;
+  preview?: string;
+}
+
 type OverlayState = 'SELECTING' | 'ARMED' | 'RECORDING';
-type OverlayMode = 'record' | 'ocr_snip';
+type OverlayMode = 'record' | 'ocr_snip' | 'snip' | 'color_picker';
 
 const BAR_WIDTH = 440;
 const BAR_HEIGHT = 48;
@@ -31,8 +39,19 @@ export const RecorderOverlay: React.FC = () => {
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('record');
   const [isProcessingSnip, setIsProcessingSnip] = useState(false);
   const [snipFeedback, setSnipFeedback] = useState<string | null>(null);
+  const [colorData, setColorData] = useState<ColorData>({
+    hex: '#000000',
+    r: 0,
+    g: 0,
+    b: 0,
+    preview: '',
+  });
+  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: -100, y: -100 });
+  const [colorCopiedFeedback, setColorCopiedFeedback] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
+  const isFetchingColorRef = useRef(false);
+  const pendingPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Formatação de tempo 00:00
   const formatDuration = (secs: number) => {
@@ -67,6 +86,15 @@ export const RecorderOverlay: React.FC = () => {
       setRecordingDuration(0);
       setIsProcessingSnip(false);
       setSnipFeedback(null);
+      setColorCopiedFeedback(null);
+
+      if (mode === 'color_picker') {
+        invoke<ColorData>('get_pixel_color_at', { x: -1, y: -1 })
+          .then((res) => {
+            if (res && res.hex) setColorData(res);
+          })
+          .catch(() => {});
+      }
     });
 
     const unlistenFinished = listen('recording-finished', () => {
@@ -272,10 +300,18 @@ export const RecorderOverlay: React.FC = () => {
   // Fecha o overlay e reseta estado
   const handleClose = async () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    if (isSelecting) {
+      setIsSelecting(false);
+      // Aguarda o fade-out suave da badge antes de fechar a janela
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
     setState('SELECTING');
     setIsPaused(false);
     setIsSelecting(false);
     setSelectedArea(null);
+    setStartPos(null);
+    setCurrentPos(null);
+    setColorCopiedFeedback(null);
     try {
       await invoke('hide_capture_border');
     } catch {}
@@ -294,8 +330,77 @@ export const RecorderOverlay: React.FC = () => {
     }
   };
 
-  // Manipuladores de mouse para desenhar retângulo
+  // Busca cor do pixel em tempo real via GDI Win32
+  const fetchPixelColor = async (cx: number, cy: number) => {
+    try {
+      const dpr = window.devicePixelRatio || 1;
+      const overlayWin = getCurrentWebviewWindow();
+      const winPos = await overlayWin.outerPosition();
+      const monitorOffsetX = winPos?.x && Math.abs(winPos.x) > 50 ? winPos.x : 0;
+      const monitorOffsetY = winPos?.y && Math.abs(winPos.y) > 50 ? winPos.y : 0;
+
+      const physicalX = monitorOffsetX + Math.round(cx * dpr);
+      const physicalY = monitorOffsetY + Math.round(cy * dpr);
+
+      const res = await invoke<ColorData>('get_pixel_color_at', {
+        x: physicalX,
+        y: physicalY,
+      });
+
+      if (res && res.hex) {
+        setColorData(res);
+      }
+    } catch {
+      // Silencioso durante movimento rápido
+    } finally {
+      isFetchingColorRef.current = false;
+      if (pendingPosRef.current && (pendingPosRef.current.x !== cx || pendingPosRef.current.y !== cy)) {
+        const next = pendingPosRef.current;
+        pendingPosRef.current = null;
+        isFetchingColorRef.current = true;
+        fetchPixelColor(next.x, next.y);
+      }
+    }
+  };
+
+  // Ao clicar no modo conta-gotas: copia HEX e salva no histórico
+  const handlePickColor = async () => {
+    if (colorCopiedFeedback) return;
+    try {
+      const hex = colorData.hex;
+      await invoke('save_color_to_history', {
+        hex: colorData.hex,
+        r: colorData.r,
+        g: colorData.g,
+        b: colorData.b,
+      });
+
+      setColorCopiedFeedback(hex);
+      setTimeout(() => {
+        handleClose();
+      }, 450);
+    } catch (err) {
+      console.error('[Color Picker] Erro ao salvar cor:', err);
+      try {
+        await invoke('copy_text_to_clipboard', { text: colorData.hex });
+        setColorCopiedFeedback(colorData.hex);
+        setTimeout(() => {
+          handleClose();
+        }, 450);
+      } catch {
+        handleClose();
+      }
+    }
+  };
+
+  // Manipuladores de mouse para desenhar retângulo ou capturar cor
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (overlayMode === 'color_picker') {
+      if (e.button === 0) {
+        handlePickColor();
+      }
+      return;
+    }
     if (state !== 'SELECTING' || e.button !== 0) return;
     setStartPos({ x: e.clientX, y: e.clientY });
     setCurrentPos({ x: e.clientX, y: e.clientY });
@@ -303,6 +408,19 @@ export const RecorderOverlay: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (overlayMode === 'color_picker') {
+      const cx = e.clientX;
+      const cy = e.clientY;
+      setMousePos({ x: cx, y: cy });
+
+      pendingPosRef.current = { x: cx, y: cy };
+      if (!isFetchingColorRef.current) {
+        isFetchingColorRef.current = true;
+        fetchPixelColor(cx, cy);
+      }
+      return;
+    }
+
     if (!isSelecting || state !== 'SELECTING') return;
     setCurrentPos({ x: e.clientX, y: e.clientY });
   };
@@ -317,8 +435,8 @@ export const RecorderOverlay: React.FC = () => {
       const width = Math.abs(currentPos.x - startPos.x);
       const height = Math.abs(currentPos.y - startPos.y);
 
-      // Modo Snip OCR: captura imediata em memória e injeção no clipboard
-      if (overlayMode === 'ocr_snip') {
+      // Modo Snip: Captura de Imagem Recortada via GDI e injeção no Clipboard
+      if (overlayMode === 'ocr_snip' || overlayMode === 'snip') {
         if (width >= 10 && height >= 10) {
           setIsProcessingSnip(true);
           const dpr = window.devicePixelRatio || 1;
@@ -333,26 +451,22 @@ export const RecorderOverlay: React.FC = () => {
           const physicalH = Math.round(height * dpr);
 
           try {
-            const extracted = await invoke<string>('snip_ocr_rect', {
+            await invoke<string>('save_snip_image', {
               x: physicalX,
               y: physicalY,
               width: physicalW,
               height: physicalH,
             });
 
-            if (extracted && extracted.trim().length > 0) {
-              setSnipFeedback('Texto copiado para a área de transferência!');
-            } else {
-              setSnipFeedback('Nenhum texto identificado nesta imagem');
-            }
+            setSnipFeedback('Recorte copiado para a área de transferência!');
           } catch (err) {
-            console.error('[Snip OCR] Erro ao extrair texto:', err);
-            setSnipFeedback('Falha na extração de texto');
+            console.error('[Snip Screenshot] Erro ao salvar recorte:', err);
+            setSnipFeedback('Falha ao capturar recorte');
           } finally {
             setIsProcessingSnip(false);
             setTimeout(() => {
               handleClose();
-            }, 650);
+            }, 600);
           }
         } else {
           setStartPos(null);
@@ -365,9 +479,11 @@ export const RecorderOverlay: React.FC = () => {
         const area: Rect = { x, y, width, height };
         await armRecording(area);
       } else {
-        // Clique rápido ou área muito pequena cancela seleção
-        setStartPos(null);
-        setCurrentPos(null);
+        // Clique rápido ou área muito pequena cancela seleção com fade-out suave
+        setTimeout(() => {
+          setStartPos(null);
+          setCurrentPos(null);
+        }, 150);
       }
     } catch (err) {
       console.error('Erro no RecorderOverlay:', err);
@@ -376,7 +492,7 @@ export const RecorderOverlay: React.FC = () => {
 
   // Calcula coordenadas atuais da seleção
   const currentRect: Rect | null =
-    isSelecting && startPos && currentPos
+    startPos && currentPos
       ? {
           x: Math.min(startPos.x, currentPos.x),
           y: Math.min(startPos.y, currentPos.y),
@@ -541,19 +657,60 @@ export const RecorderOverlay: React.FC = () => {
   }
 
   // Estado SELECTING: Overlay fullscreen com mira, banner e desenho de seleção
+  const isSelectingActive = isSelecting && !!currentRect && currentRect.width > 10 && currentRect.height > 10;
+  const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+  const logicalW = currentRect ? Math.round(currentRect.width) : 0;
+  const logicalH = currentRect ? Math.round(currentRect.height) : 0;
+  const realW = currentRect ? Math.round(currentRect.width * dpr) : 0;
+  const realH = currentRect ? Math.round(currentRect.height * dpr) : 0;
+
+  const screenW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+  const screenH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+
+  const touchesBottom = currentRect ? currentRect.y + currentRect.height + 36 >= screenH : false;
+  const touchesTop = currentRect ? currentRect.y < 36 : false;
+
+  let verticalPosClass = 'top-full mt-1.5';
+  if (touchesBottom && !touchesTop) {
+    verticalPosClass = 'bottom-full mb-1.5';
+  } else if (touchesBottom && touchesTop) {
+    verticalPosClass = 'bottom-1.5';
+  }
+
+  const rectCenter = currentRect ? currentRect.x + currentRect.width / 2 : 0;
+  let horizontalPosClass = 'left-1/2 -translate-x-1/2';
+  if (rectCenter < 90) {
+    horizontalPosClass = 'left-0 translate-x-0';
+  } else if (rectCenter > screenW - 90) {
+    horizontalPosClass = 'right-0 translate-x-0';
+  }
+
   return (
     <div
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      className="fixed inset-0 w-screen h-screen overflow-hidden select-none cursor-crosshair bg-black/25"
+      className={`fixed inset-0 w-screen h-screen overflow-hidden select-none ${
+        overlayMode === 'color_picker'
+          ? 'cursor-crosshair bg-transparent'
+          : 'cursor-crosshair bg-black/25'
+      }`}
     >
       {/* Banner de Ajuda no Topo */}
-      {overlayMode === 'ocr_snip' ? (
+      {overlayMode === 'color_picker' ? (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-950/90 border border-amber-500/30 shadow-2xl backdrop-blur-md pointer-events-auto text-xs text-zinc-200 animate-in fade-in slide-in-from-top-3 duration-200">
+          <span className="font-medium text-zinc-100 flex items-center gap-2">
+            <Pipette className="w-4 h-4 text-amber-400" />
+            <span>Conta-gotas • Clique para copiar a cor</span>
+          </span>
+          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-400 font-mono text-[11px]">[Esc] Cancelar</span>
+        </div>
+      ) : overlayMode === 'ocr_snip' || overlayMode === 'snip' ? (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-950/90 border border-indigo-500/30 shadow-2xl backdrop-blur-md pointer-events-auto text-xs text-zinc-200 animate-in fade-in slide-in-from-top-3 duration-200">
           <span className="font-medium text-zinc-100 flex items-center gap-2">
             <ScanText className="w-4 h-4 text-indigo-400" />
-            <span>Selecione o texto para extrair</span>
+            <span>Arraste para selecionar a área do recorte</span>
           </span>
           <span className="text-zinc-600">•</span>
           <span className="text-zinc-400 font-mono text-[11px]">[Esc] Cancelar</span>
@@ -577,11 +734,11 @@ export const RecorderOverlay: React.FC = () => {
         </div>
       )}
 
-      {/* Indicador de Processamento / Toast de Feedback */}
+      {/* Indicador de Processamento / Toast de Feedback para Snip */}
       {isProcessingSnip && !snipFeedback && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-950/95 border border-indigo-500/60 shadow-2xl backdrop-blur-md text-xs font-semibold text-indigo-200 animate-in fade-in zoom-in-95 duration-150">
           <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
-          <span>Extraindo texto com OCR nativo...</span>
+          <span>Salvando recorte de tela...</span>
         </div>
       )}
 
@@ -592,8 +749,83 @@ export const RecorderOverlay: React.FC = () => {
         </div>
       )}
 
-      {/* Retângulo de Seleção / Área a Gravar */}
-      {currentRect && (
+      {/* Toast de Feedback para Cor Copiada */}
+      {colorCopiedFeedback && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 rounded-xl bg-zinc-950/95 border border-emerald-500/60 shadow-2xl backdrop-blur-md text-xs font-semibold text-emerald-300 animate-in fade-in zoom-in-95 duration-150">
+          <div
+            className="w-3.5 h-3.5 rounded-full border border-white/30 shadow-inner shrink-0"
+            style={{ backgroundColor: colorCopiedFeedback }}
+          />
+          <span>Cor copiada para a área de transferência! ({colorCopiedFeedback})</span>
+          <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+        </div>
+      )}
+
+      {/* Lupa Flutuante de Zoom & Badge de Cor no Modo Conta-gotas */}
+      {overlayMode === 'color_picker' && mousePos.x >= 0 && (
+        <div
+          style={{
+            left: `${mousePos.x}px`,
+            top: `${mousePos.y}px`,
+            transform: 'translate(-50%, -50%)',
+          }}
+          className="fixed pointer-events-none z-40 flex flex-col items-center select-none"
+        >
+          {/* Lente Circular de Zoom com Retículo de Mira */}
+          <div className="relative w-28 h-28 rounded-full border-2 border-white/90 ring-4 ring-black/40 shadow-2xl overflow-hidden bg-zinc-900 flex items-center justify-center">
+            {colorData.preview ? (
+              <img
+                src={colorData.preview}
+                alt="Zoom"
+                className="w-full h-full object-cover [image-rendering:pixelated] select-none pointer-events-none"
+              />
+            ) : (
+              <div
+                className="w-full h-full"
+                style={{ backgroundColor: colorData.hex }}
+              />
+            )}
+
+            {/* Retículo de Mira Centralizado no Pixel Exato */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="absolute w-full h-[1px] bg-white/40 shadow-sm" />
+              <div className="absolute h-full w-[1px] bg-white/40 shadow-sm" />
+              <div className="w-[9px] h-[9px] border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.8)] z-10" />
+            </div>
+          </div>
+
+          {/* Badge Fixada à Lupa com HEX e RGB */}
+          <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950/95 border border-zinc-700/80 shadow-2xl backdrop-blur-xl whitespace-nowrap transition-all ${
+              mousePos.y > (typeof window !== 'undefined' ? window.innerHeight : 1080) - 130
+                ? 'order-first mb-3'
+                : 'order-last mt-3'
+            }`}
+          >
+            {/* Amostra da Cor */}
+            <div
+              className="w-4 h-4 rounded-md border border-white/30 shadow-inner shrink-0"
+              style={{ backgroundColor: colorData.hex }}
+            />
+
+            {/* Código HEX em Destaque */}
+            <span className="font-mono text-xs font-bold text-white tracking-wider">
+              {colorData.hex}
+            </span>
+
+            {/* Separador */}
+            <span className="text-zinc-600 text-xs">•</span>
+
+            {/* Valores RGB */}
+            <span className="text-[11px] font-mono text-zinc-400">
+              RGB({colorData.r}, {colorData.g}, {colorData.b})
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Retângulo de Seleção / Área a Gravar (Apenas em modos record e snip) */}
+      {overlayMode !== 'color_picker' && currentRect && (
         <div
           style={{
             left: `${currentRect.x}px`,
@@ -603,18 +835,25 @@ export const RecorderOverlay: React.FC = () => {
             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45)',
           }}
           className={`absolute pointer-events-none transition-all duration-75 border-2 ${
-            overlayMode === 'ocr_snip'
+            overlayMode === 'ocr_snip' || overlayMode === 'snip'
               ? 'border-indigo-400 bg-indigo-400/10'
               : 'border-cyan-400 bg-cyan-400/5'
           }`}
         >
-          {/* Badge com as Dimensões da Seleção */}
+          {/* Marcador Dinâmico de Dimensões (Pill Flutuante) */}
           <div
-            className={`absolute -bottom-7 right-0 px-2 py-0.5 rounded bg-zinc-950/90 border border-white/20 text-[10px] font-mono shadow-md ${
-              overlayMode === 'ocr_snip' ? 'text-indigo-300' : 'text-cyan-300'
+            className={`absolute z-50 flex items-center whitespace-nowrap bg-neutral-950/90 backdrop-blur-md border border-neutral-700/60 font-mono text-xs text-neutral-200 px-2 py-0.5 rounded shadow-lg select-none pointer-events-none transition-opacity duration-150 ease-out ${verticalPosClass} ${horizontalPosClass} ${
+              isSelectingActive ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            {Math.round(currentRect.width)} × {Math.round(currentRect.height)} px
+            <span>
+              {logicalW} × {logicalH} px
+              {Math.abs(dpr - 1) > 0.01 && (
+                <span className="text-neutral-400 font-normal ml-1">
+                  • {realW}×{realH} f
+                </span>
+              )}
+            </span>
           </div>
         </div>
       )}

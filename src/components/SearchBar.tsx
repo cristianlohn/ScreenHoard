@@ -13,6 +13,7 @@ import {
   Video,
   Languages,
   ScanText,
+  Pipette,
 } from 'lucide-react';
 import type { FilterTab } from '@/hooks/useClipboardHistory';
 
@@ -35,6 +36,7 @@ interface SearchBarProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
   onStartRecording?: () => void;
   onStartOcrSnip?: () => void;
+  onStartColorPicker?: () => void;
   onQuickTranslate?: () => void;
 }
 
@@ -50,6 +52,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   inputRef,
   onStartRecording,
   onStartOcrSnip,
+  onStartColorPicker,
   onQuickTranslate,
 }) => {
   const handleSettingsClick = onOpenSettings || onToggleSettings;
@@ -173,11 +176,31 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                 }
               }}
               tabIndex={-1}
-              title="Extrair Texto da Tela (Ctrl+Shift+T)"
+              title="Recorte de Tela (Ctrl+Shift+T)"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               className="p-1 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 hover:border-indigo-500/30 border-transparent cursor-pointer shrink-0"
             >
               <ScanText className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Botão de Conta-gotas de Tela (Color Picker) */}
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  if (onStartColorPicker) {
+                    await onStartColorPicker();
+                  }
+                } catch (err) {
+                  console.error('Erro ao iniciar Conta-gotas:', err);
+                }
+              }}
+              tabIndex={-1}
+              title="Conta-gotas de Tela (Ctrl+Shift+C)"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              className="p-1 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/30 border-transparent cursor-pointer shrink-0"
+            >
+              <Pipette className="w-3.5 h-3.5" />
             </button>
 
             {/* Botão de Tradução Rápida */}
