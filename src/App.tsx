@@ -26,6 +26,7 @@ export const App: React.FC = () => {
     deleteItem,
     counts,
     startRecording,
+    startOcrSnip,
   } = useClipboardHistory();
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -39,17 +40,20 @@ export const App: React.FC = () => {
     searchInputRef.current?.focus();
   }, []);
 
-  // Listener global de atalhos de janela (ex: Ctrl+, para alternar Configurações)
+  // Listener global de atalhos de janela (ex: Ctrl+, para alternar Configurações, Ctrl+Shift+T para Snip OCR)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         setIsSettingsOpen(!isSettingsOpen);
+      } else if ((e.key === 'T' || e.key === 't') && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        startOcrSnip();
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isSettingsOpen]);
+  }, [isSettingsOpen, startOcrSnip]);
 
   // Scroll automático do card focado para mantê-lo visível na viewport
   useEffect(() => {
@@ -99,6 +103,13 @@ export const App: React.FC = () => {
         setIsQuickTranslateOpen(false);
         searchInputRef.current?.focus();
       }
+      return;
+    }
+
+    // Atalho Ctrl+Shift+T para Captura Rápida de Texto (Snip OCR)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+      e.preventDefault();
+      startOcrSnip();
       return;
     }
 
@@ -212,6 +223,7 @@ export const App: React.FC = () => {
           onOpenSettings={() => setIsSettingsOpen(true)}
           onToggleSettings={() => setIsSettingsOpen(!isSettingsOpen)}
           onStartRecording={() => startRecording()}
+          onStartOcrSnip={() => startOcrSnip()}
           onQuickTranslate={handleTriggerTranslate}
         />
 

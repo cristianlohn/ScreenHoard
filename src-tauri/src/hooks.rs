@@ -197,6 +197,25 @@ unsafe extern "system" fn keyboard_hook_proc(
                 }
             }
 
+            // Atalho global Ctrl+Shift+T para Captura Rápida de Texto (Snip OCR)
+            if vk == 0x54 { // Tecla 'T'
+                let ctrl_down = unsafe {
+                    (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
+                };
+                let shift_down = unsafe {
+                    (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x10) as u16 & 0x8000) != 0
+                };
+                if ctrl_down && shift_down {
+                    if let Some(ctx) = HOOK_CONTEXT.get() {
+                        let app = ctx.app_handle.clone();
+                        std::thread::spawn(move || {
+                            let _ = crate::open_recorder_overlay_internal(&app, Some("ocr_snip".to_string()));
+                        });
+                        return 1;
+                    }
+                }
+            }
+
             if let Some(ctx) = HOOK_CONTEXT.get() {
                 if let Ok(bindings) = ctx.bindings.read() {
                     let is_screenshot = match_key_trigger(&bindings.screenshot, vk);

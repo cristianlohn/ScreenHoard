@@ -54,6 +54,7 @@ export interface UseClipboardHistoryReturn {
   maxRecordingDuration: number;
   startRecording: (customMaxSecs?: number) => Promise<void>;
   stopRecording: () => Promise<void>;
+  startOcrSnip: () => Promise<void>;
   counts: {
     all: number;
     image: number;
@@ -348,6 +349,16 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
     }
   }, []);
 
+  // Inicia o processo de Captura Rápida de Texto (Snip OCR)
+  const startOcrSnip = useCallback(async () => {
+    try {
+      await invoke('hide_modal_window');
+      await invoke('open_recorder_overlay', { mode: 'ocr_snip' });
+    } catch (err) {
+      console.error('[ScreenHoard] Falha ao abrir overlay para Snip OCR:', err);
+    }
+  }, []);
+
   return {
     items,
     filteredItems,
@@ -371,6 +382,7 @@ export function useClipboardHistory(): UseClipboardHistoryReturn {
     maxRecordingDuration,
     startRecording,
     stopRecording,
+    startOcrSnip,
     counts,
   };
 }

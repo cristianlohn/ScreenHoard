@@ -241,15 +241,20 @@ async fn copy_item(
     copy_item_to_clipboard(state, id, item_type).await
 }
 
+/// Copia diretamente um texto para a área de transferência com supressão de auto-captura.
+pub fn copy_text_direct(text: &str) -> Result<(), String> {
+    println!("===> copy_text_direct chamada para texto de tamanho: {}", text.len());
+    clipboard_listener::set_ignore_next_update(true);
+    clipboard_listener::record_last_text(text);
+    set_text_with_retry(text)?;
+    println!("===> arboard.set_text retornou OK em copy_text_direct.");
+    Ok(())
+}
+
 /// Copia um texto arbitrário para a área de transferência com supressão de auto-captura.
 #[tauri::command(rename_all = "snake_case")]
 fn copy_text_to_clipboard(text: String) -> Result<(), String> {
-    println!("===> copy_text_to_clipboard chamada para texto de tamanho: {}", text.len());
-    clipboard_listener::set_ignore_next_update(true);
-    clipboard_listener::record_last_text(&text);
-    set_text_with_retry(&text)?;
-    println!("===> arboard.set_text retornou OK em copy_text_to_clipboard.");
-    Ok(())
+    copy_text_direct(&text)
 }
 
 /// Exclui um item pelo ID e apaga a mídia correspondente em disco se for imagem.
@@ -509,9 +514,8 @@ fn set_recording_speed(speed: f32) {
     recorder::set_recording_speed(speed);
 }
 
-/// Abre a janela transparente de seleção de área para gravação de GIF no monitor ativo.
-#[tauri::command]
-fn open_recorder_overlay(app_handle: AppHandle) -> Result<(), String> {
+/// Abre a janela transparente de seleção de área para gravação de GIF ou Snip OCR no monitor ativo.
+pub fn open_recorder_overlay_internal(app_handle: &AppHandle, mode: Option<String>) -> Result<(), String> {
     if let Some(main_win) = app_handle.get_webview_window("main") {
         let _ = main_win.hide();
     }
@@ -539,7 +543,7 @@ fn open_recorder_overlay(app_handle: AppHandle) -> Result<(), String> {
             }
         }
 
-        // Aplica WDA_EXCLUDEFROMCAPTURE para garantir que o overlay seja 100% invisível na gravação
+        // Aplica WDA_EXCLUDEFROMCAPTURE para garantir que o overlay seja 100% invisível na gravação e captura
         const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
         if let Ok(hwnd) = overlay.hwnd() {
             unsafe {
@@ -550,12 +554,19 @@ fn open_recorder_overlay(app_handle: AppHandle) -> Result<(), String> {
             }
         }
 
+        let selected_mode = mode.unwrap_or_else(|| "record".to_string());
         let _ = overlay.set_fullscreen(true);
         let _ = overlay.show();
         let _ = overlay.set_focus();
-        let _ = overlay.emit("prepare-selection", ());
+        let _ = overlay.emit("prepare-selection", serde_json::json!({ "mode": selected_mode }));
     }
     Ok(())
+}
+
+/// Abre a janela transparente de seleção de área para gravação de GIF ou Snip OCR no monitor ativo.
+#[tauri::command]
+fn open_recorder_overlay(app_handle: AppHandle, mode: Option<String>) -> Result<(), String> {
+    open_recorder_overlay_internal(&app_handle, mode)
 }
 
 /// Fecha a janela de overlay de gravação.
@@ -614,6 +625,12 @@ fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
 #[tauri::command]
 async fn extract_text_from_image(file_path: String) -> Result<String, String> {
     ocr::recognize_text_from_path(&file_path).await
+}
+
+/// Captura uma região retangular da tela via GDI em memória e extrai o texto com OCR nativo, copiando-o diretamente para o clipboard.
+#[tauri::command]
+async fn snip_ocr_rect(x: i32, y: i32, width: i32, height: i32) -> Result<String, String> {
+    ocr::recognize_text_from_screen_rect(x, y, width, height).await
 }
 
 /* ==========================================================================
@@ -727,6 +744,7 @@ pub fn run() {
             is_autostart_enabled,
             set_autostart_enabled,
             extract_text_from_image,
+            snip_ocr_rect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ScreenHoard application");

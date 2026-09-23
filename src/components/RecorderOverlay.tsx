@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
-import { Check, Zap, Monitor, Play, Pause, X } from 'lucide-react';
+import { Check, Zap, Monitor, Play, Pause, X, ScanText } from 'lucide-react';
 
 interface Rect {
   x: number;
@@ -13,6 +13,7 @@ interface Rect {
 }
 
 type OverlayState = 'SELECTING' | 'ARMED' | 'RECORDING';
+type OverlayMode = 'record' | 'ocr_snip';
 
 const BAR_WIDTH = 440;
 const BAR_HEIGHT = 48;
@@ -27,6 +28,9 @@ export const RecorderOverlay: React.FC = () => {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [maxRecordingDuration, setMaxRecordingDuration] = useState(15);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(1.0);
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>('record');
+  const [isProcessingSnip, setIsProcessingSnip] = useState(false);
+  const [snipFeedback, setSnipFeedback] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
 
@@ -51,7 +55,9 @@ export const RecorderOverlay: React.FC = () => {
 
   // Prepara overlay para nova seleção ao receber evento do backend
   useEffect(() => {
-    const unlistenPrepare = listen('prepare-selection', () => {
+    const unlistenPrepare = listen<{ mode?: OverlayMode }>('prepare-selection', (event) => {
+      const mode = event.payload?.mode || 'record';
+      setOverlayMode(mode);
       setState('SELECTING');
       setIsSelecting(false);
       setStartPos(null);
@@ -59,6 +65,8 @@ export const RecorderOverlay: React.FC = () => {
       setSelectedArea(null);
       setIsPaused(false);
       setRecordingDuration(0);
+      setIsProcessingSnip(false);
+      setSnipFeedback(null);
     });
 
     const unlistenFinished = listen('recording-finished', () => {
@@ -309,6 +317,50 @@ export const RecorderOverlay: React.FC = () => {
       const width = Math.abs(currentPos.x - startPos.x);
       const height = Math.abs(currentPos.y - startPos.y);
 
+      // Modo Snip OCR: captura imediata em memória e injeção no clipboard
+      if (overlayMode === 'ocr_snip') {
+        if (width >= 10 && height >= 10) {
+          setIsProcessingSnip(true);
+          const dpr = window.devicePixelRatio || 1;
+          const overlayWin = getCurrentWebviewWindow();
+          const winPos = await overlayWin.outerPosition();
+          const monitorOffsetX = winPos?.x && Math.abs(winPos.x) > 50 ? winPos.x : 0;
+          const monitorOffsetY = winPos?.y && Math.abs(winPos.y) > 50 ? winPos.y : 0;
+
+          const physicalX = monitorOffsetX + Math.round(x * dpr);
+          const physicalY = monitorOffsetY + Math.round(y * dpr);
+          const physicalW = Math.round(width * dpr);
+          const physicalH = Math.round(height * dpr);
+
+          try {
+            const extracted = await invoke<string>('snip_ocr_rect', {
+              x: physicalX,
+              y: physicalY,
+              width: physicalW,
+              height: physicalH,
+            });
+
+            if (extracted && extracted.trim().length > 0) {
+              setSnipFeedback('Texto copiado para a área de transferência!');
+            } else {
+              setSnipFeedback('Nenhum texto identificado nesta imagem');
+            }
+          } catch (err) {
+            console.error('[Snip OCR] Erro ao extrair texto:', err);
+            setSnipFeedback('Falha na extração de texto');
+          } finally {
+            setIsProcessingSnip(false);
+            setTimeout(() => {
+              handleClose();
+            }, 650);
+          }
+        } else {
+          setStartPos(null);
+          setCurrentPos(null);
+        }
+        return;
+      }
+
       if (width >= 40 && height >= 40) {
         const area: Rect = { x, y, width, height };
         await armRecording(area);
@@ -497,22 +549,48 @@ export const RecorderOverlay: React.FC = () => {
       className="fixed inset-0 w-screen h-screen overflow-hidden select-none cursor-crosshair bg-black/25"
     >
       {/* Banner de Ajuda no Topo */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-950/90 border border-white/15 shadow-2xl backdrop-blur-md pointer-events-auto text-xs text-zinc-200 animate-in fade-in slide-in-from-top-3 duration-200">
-        <span className="font-medium text-zinc-100 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-          Arraste para selecionar a área do GIF
-        </span>
-        <span className="text-zinc-600">•</span>
-        <button
-          onClick={startFullScreenRecording}
-          className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-cyan-300 font-medium transition-colors cursor-pointer"
-        >
-          <Monitor className="w-3 h-3" />
-          <span>Tela Inteira [F]</span>
-        </button>
-        <span className="text-zinc-600">•</span>
-        <span className="text-zinc-400 font-mono text-[11px]">[Esc] Cancelar</span>
-      </div>
+      {overlayMode === 'ocr_snip' ? (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-950/90 border border-indigo-500/30 shadow-2xl backdrop-blur-md pointer-events-auto text-xs text-zinc-200 animate-in fade-in slide-in-from-top-3 duration-200">
+          <span className="font-medium text-zinc-100 flex items-center gap-2">
+            <ScanText className="w-4 h-4 text-indigo-400" />
+            <span>Selecione o texto para extrair</span>
+          </span>
+          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-400 font-mono text-[11px]">[Esc] Cancelar</span>
+        </div>
+      ) : (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-950/90 border border-white/15 shadow-2xl backdrop-blur-md pointer-events-auto text-xs text-zinc-200 animate-in fade-in slide-in-from-top-3 duration-200">
+          <span className="font-medium text-zinc-100 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            Arraste para selecionar a área do GIF
+          </span>
+          <span className="text-zinc-600">•</span>
+          <button
+            onClick={startFullScreenRecording}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-cyan-300 font-medium transition-colors cursor-pointer"
+          >
+            <Monitor className="w-3 h-3" />
+            <span>Tela Inteira [F]</span>
+          </button>
+          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-400 font-mono text-[11px]">[Esc] Cancelar</span>
+        </div>
+      )}
+
+      {/* Indicador de Processamento / Toast de Feedback */}
+      {isProcessingSnip && !snipFeedback && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-950/95 border border-indigo-500/60 shadow-2xl backdrop-blur-md text-xs font-semibold text-indigo-200 animate-in fade-in zoom-in-95 duration-150">
+          <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
+          <span>Extraindo texto com OCR nativo...</span>
+        </div>
+      )}
+
+      {snipFeedback && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-950/95 border border-emerald-500/60 shadow-2xl backdrop-blur-md text-xs font-semibold text-emerald-300 animate-in fade-in zoom-in-95 duration-150">
+          <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+          <span>{snipFeedback}</span>
+        </div>
+      )}
 
       {/* Retângulo de Seleção / Área a Gravar */}
       {currentRect && (
@@ -524,10 +602,18 @@ export const RecorderOverlay: React.FC = () => {
             height: `${currentRect.height}px`,
             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45)',
           }}
-          className="absolute pointer-events-none transition-all duration-75 border-2 border-cyan-400 bg-cyan-400/5"
+          className={`absolute pointer-events-none transition-all duration-75 border-2 ${
+            overlayMode === 'ocr_snip'
+              ? 'border-indigo-400 bg-indigo-400/10'
+              : 'border-cyan-400 bg-cyan-400/5'
+          }`}
         >
           {/* Badge com as Dimensões da Seleção */}
-          <div className="absolute -bottom-7 right-0 px-2 py-0.5 rounded bg-zinc-950/90 border border-white/20 text-[10px] font-mono text-cyan-300 shadow-md">
+          <div
+            className={`absolute -bottom-7 right-0 px-2 py-0.5 rounded bg-zinc-950/90 border border-white/20 text-[10px] font-mono shadow-md ${
+              overlayMode === 'ocr_snip' ? 'text-indigo-300' : 'text-cyan-300'
+            }`}
+          >
             {Math.round(currentRect.width)} × {Math.round(currentRect.height)} px
           </div>
         </div>

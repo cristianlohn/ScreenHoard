@@ -368,6 +368,13 @@ CREATE TABLE IF NOT EXISTS app_settings (
   - Cards de imagem estática (`type === 'image' && !isGif`) contam com o botão "Copiar Texto" (ícone `ScanText`) no cabeçalho e opção "Extrair Texto (OCR)" no menu de contexto.
   - Ao clicar, o texto extraído é imediatamente injetado na área de transferência com supressão de auto-captura garantida e micro-feedback visual ("• Copiado!").
   - Gaveta retrátil exibe o texto extraído com suporte a rolagem para textos longos, botões para "Copiar Novamente" e "Traduzir Texto" (integrado diretamente ao motor multi-idioma de tradução). Se nenhum texto for identificado, exibe "Nenhum texto identificado nesta imagem".
+- **Captura Rápida de Texto estilo PowerToys Text Extractor (Snip OCR em Memória) (v0.3.0):**
+  - **Gatilhos de Ativação:** Botão dedicado `ScanText` (size 16) no cabeçalho superior (`SearchBar.tsx`) ao lado do botão de vídeo e atalho universal `Ctrl + Shift + T` registrado tanto localmente na janela (`App.tsx`) quanto globalmente em baixo nível no Windows via `WH_KEYBOARD_LL` (`hooks.rs`).
+  - **Modo `ocr_snip` no Overlay (`RecorderOverlay.tsx`):** A janela `recorder_overlay` é acionada em modo fullscreen com `cursor-crosshair` e banner informativo *"Selecione o texto para extrair • [Esc] Cancelar"*.
+  - **Captura GDI 1:1 Direta em Memória (`ocr.rs`):** Ao soltar o mouse (área >= 10x10 px), as coordenadas são escaladas pelo DPI do monitor (`window.devicePixelRatio`) e repassadas ao comando `snip_ocr_rect`. No Win32, utiliza `GetDC(NULL)`, `CreateCompatibleBitmap`, `BitBlt` 1:1 e `GetDIBits` para obter os pixels físicos em BGRA nativo sem criar nenhum arquivo intermediário em disco (zero disk I/O).
+  - **Ponte em Memória para WinRT:** Os bytes BGRA são encapsulados em memória com um cabeçalho BMP de 54 bytes e enviados ao pipeline `InMemoryRandomAccessStream` + `BitmapDecoder` + `OcrEngine`.
+  - **Injeção Instantânea no Clipboard com Supressão:** O texto reconhecido é imediatamente injetado como `CF_UNICODETEXT` através de `copy_text_direct`, ativando a flag `set_ignore_next_update(true)` e registrando o hash em `record_last_text` para impedir loops infinitos no listener nativo.
+  - **Feedback Visual Fluido:** Exibe badge de sucesso *"Texto copiado para a área de transferência!"* (ou aviso de nenhum texto) por 600ms e fecha o overlay automaticamente.
 
 ---
 

@@ -12,6 +12,7 @@ import {
   X,
   Video,
   Languages,
+  ScanText,
 } from 'lucide-react';
 import type { FilterTab } from '@/hooks/useClipboardHistory';
 
@@ -33,6 +34,7 @@ interface SearchBarProps {
   onToggleSettings?: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   onStartRecording?: () => void;
+  onStartOcrSnip?: () => void;
   onQuickTranslate?: () => void;
 }
 
@@ -47,6 +49,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   onToggleSettings,
   inputRef,
   onStartRecording,
+  onStartOcrSnip,
   onQuickTranslate,
 }) => {
   const handleSettingsClick = onOpenSettings || onToggleSettings;
@@ -155,6 +158,26 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-pink-300 hover:bg-pink-500/10 hover:border-pink-500/30 border-transparent cursor-pointer shrink-0"
             >
               <Video className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Botão de Captura Rápida de Texto (Snip OCR) */}
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  if (onStartOcrSnip) {
+                    await onStartOcrSnip();
+                  }
+                } catch (err) {
+                  console.error('Erro ao iniciar Snip OCR:', err);
+                }
+              }}
+              tabIndex={-1}
+              title="Extrair Texto da Tela (Ctrl+Shift+T)"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 hover:border-indigo-500/30 border-transparent cursor-pointer shrink-0"
+            >
+              <ScanText size={16} />
             </button>
 
             {/* Botão de Tradução Rápida */}
