@@ -136,3 +136,105 @@ pub fn copy_gif_file_to_clipboard(file_path: &Path) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Formato padrão do Windows para texto Unicode (CF_UNICODETEXT).
+pub const CF_UNICODETEXT: u32 = 13;
+
+/// Injeta um texto Unicode diretamente no clipboard do Windows garantindo abertura e fechamento estritos.
+pub fn set_clipboard_text_win32(text: &str) -> Result<(), String> {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes_len = wide.len() * std::mem::size_of::<u16>();
+
+    unsafe {
+        let h_global = GlobalAlloc(GMEM_MOVEABLE, bytes_len);
+        if h_global.is_null() {
+            return Err("Falha ao alocar memória global para texto".to_string());
+        }
+
+        let ptr = GlobalLock(h_global) as *mut u16;
+        if ptr.is_null() {
+            GlobalFree(h_global);
+            return Err("Falha ao bloquear memória global para texto".to_string());
+        }
+
+        std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+        GlobalUnlock(h_global);
+
+        let mut opened = false;
+        for _ in 1..=10 {
+            if OpenClipboard(std::ptr::null_mut()) != 0 {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+
+        if !opened {
+            GlobalFree(h_global);
+            return Err("Não foi possível abrir o clipboard do Windows para gravação de texto".to_string());
+        }
+
+        EmptyClipboard();
+
+        let set_res = SetClipboardData(CF_UNICODETEXT, h_global as _);
+        if set_res.is_null() {
+            GlobalFree(h_global);
+            CloseClipboard();
+            return Err("Falha ao gravar CF_UNICODETEXT no clipboard".to_string());
+        }
+
+        // Garante o fechamento imediato do clipboard para liberar outros processos e o listener
+        CloseClipboard();
+    }
+
+    Ok(())
+}
+
+/// Lê o texto Unicode (CF_UNICODETEXT) do clipboard do Windows garantindo liberação do handle e fechamento estrito.
+pub fn get_clipboard_text_win32() -> Result<String, String> {
+    use windows_sys::Win32::System::DataExchange::{GetClipboardData, IsClipboardFormatAvailable};
+
+    unsafe {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 {
+            return Err("Formato CF_UNICODETEXT não disponível no clipboard".to_string());
+        }
+
+        let mut opened = false;
+        for _ in 1..=5 {
+            if OpenClipboard(std::ptr::null_mut()) != 0 {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+
+        if !opened {
+            return Err("Não foi possível abrir o clipboard do Windows para leitura de texto".to_string());
+        }
+
+        let handle = GetClipboardData(CF_UNICODETEXT);
+        if handle.is_null() {
+            CloseClipboard();
+            return Err("GetClipboardData retornou nulo para CF_UNICODETEXT".to_string());
+        }
+
+        let ptr = GlobalLock(handle) as *const u16;
+        if ptr.is_null() {
+            CloseClipboard();
+            return Err("GlobalLock falhou ao ler dados do clipboard".to_string());
+        }
+
+        let mut len = 0;
+        while *ptr.add(len) != 0 {
+            len += 1;
+        }
+
+        let slice = std::slice::from_raw_parts(ptr, len);
+        let result = String::from_utf16_lossy(slice);
+
+        GlobalUnlock(handle);
+        CloseClipboard();
+
+        Ok(result)
+    }
+}

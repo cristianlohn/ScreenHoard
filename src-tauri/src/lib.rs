@@ -217,14 +217,7 @@ async fn copy_item_to_clipboard(
         println!("===> Preparando cópia de TEXTO. Content length: {}", content_len);
 
         let text = item.content.unwrap_or_default();
-
-        println!("===> Chamando clipboard_listener::set_ignore_next_update(true) e record_last_text...");
-        clipboard_listener::set_ignore_next_update(true);
-        clipboard_listener::record_last_text(&text);
-
-        println!("===> Chamando arboard::Clipboard::set_text com retry...");
-        set_text_with_retry(&text)?;
-        println!("===> arboard.set_text retornou OK.");
+        copy_text_direct(&text)?;
     }
 
     println!("===> Operação de cópia concluída com sucesso para ID: {}", id);
@@ -243,11 +236,17 @@ async fn copy_item(
 
 /// Copia diretamente um texto para a área de transferência com supressão de auto-captura.
 pub fn copy_text_direct(text: &str) -> Result<(), String> {
-    println!("===> copy_text_direct chamada para texto de tamanho: {}", text.len());
+    eprintln!("[CLIPBOARD] copy_text_direct chamada para texto (tamanho: {} chars)", text.chars().count());
     clipboard_listener::set_ignore_next_update(true);
     clipboard_listener::record_last_text(text);
-    set_text_with_retry(text)?;
-    println!("===> arboard.set_text retornou OK em copy_text_direct.");
+
+    // Injeção direta via Win32 garantindo OpenClipboard -> EmptyClipboard -> SetClipboardData -> CloseClipboard
+    if let Err(e) = clipboard_win::set_clipboard_text_win32(text) {
+        eprintln!("[CLIPBOARD] set_clipboard_text_win32 falhou ({e}), tentando fallback arboard...");
+        set_text_with_retry(text)?;
+    }
+
+    eprintln!("[CLIPBOARD] copy_text_direct concluída com sucesso (clipboard fechado via CloseClipboard).");
     Ok(())
 }
 

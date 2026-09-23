@@ -95,7 +95,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         </div>
 
         {/* Barra de Categorias e Ícones Minimalistas */}
-        <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div className="flex items-center gap-0.5 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           {/* Filtros de Categoria */}
           <div className="flex items-center gap-0.5 shrink-0">
             <NavIconButton
@@ -138,8 +138,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
 
           <div className="w-[1px] h-3.5 bg-white/10 mx-0.5 shrink-0" />
 
-          {/* Bloco de Ações à Direita (Vídeo, Tradução, Configurações) */}
-          <div className="flex items-center gap-1 shrink-0">
+          {/* Bloco de Ações à Direita (Vídeo, Snip OCR, Tradução, Configurações) */}
+          <div className="flex items-center gap-0.5 shrink-0">
             {/* Botão de Gravação Nativa de GIF */}
             <button
               onClick={async (e) => {
@@ -155,7 +155,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               tabIndex={-1}
               title="Gravar GIF de Tela"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-pink-300 hover:bg-pink-500/10 hover:border-pink-500/30 border-transparent cursor-pointer shrink-0"
+              className="p-1 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-pink-300 hover:bg-pink-500/10 hover:border-pink-500/30 border-transparent cursor-pointer shrink-0"
             >
               <Video className="w-3.5 h-3.5" />
             </button>
@@ -175,9 +175,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               tabIndex={-1}
               title="Extrair Texto da Tela (Ctrl+Shift+T)"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 hover:border-indigo-500/30 border-transparent cursor-pointer shrink-0"
+              className="p-1 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 hover:border-indigo-500/30 border-transparent cursor-pointer shrink-0"
             >
-              <ScanText size={16} />
+              <ScanText className="w-3.5 h-3.5" />
             </button>
 
             {/* Botão de Tradução Rápida */}
@@ -186,7 +186,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               tabIndex={-1}
               title="Tradução Rápida (Ctrl+T)"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="p-1.5 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-500/30 border-transparent cursor-pointer shrink-0"
+              className="p-1 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-500/30 border-transparent cursor-pointer shrink-0"
             >
               <Languages className="w-3.5 h-3.5" />
             </button>
@@ -197,13 +197,13 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               tabIndex={-1}
               title="Configurações (Ctrl+,)"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className={`p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer ${
+              className={`p-1 rounded-md transition-colors shrink-0 cursor-pointer ${
                 isSettingsOpen
                   ? 'text-neutral-100 bg-neutral-800/80'
                   : 'text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800/80'
               }`}
             >
-              <Settings size={16} />
+              <Settings className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
