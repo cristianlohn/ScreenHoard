@@ -34,14 +34,14 @@
 
 ## ⬇️ Download & Instalação Rápida
 
-Não precisa compilar nada para usar! Baixe os instaladores prontos diretamente da nossa página de lançamentos:
+Não precisa compilar nada para usar. Baixe os instaladores oficiais:
 
 | Instalador | Tipo | Descrição |
 | :--- | :--- | :--- |
 | 🚀 **[Baixar Instalador (.exe)](https://github.com/cristianlohn/ScreenHoard/releases/latest)** | Setup NSIS | Instalador padrão com assistente passo a passo e atalho no Iniciar |
 | 📦 **[Baixar Pacote MSI (.msi)](https://github.com/cristianlohn/ScreenHoard/releases/latest)** | Windows Installer | Ideal para ambientes corporativos e instalações automatizadas |
 
-> 💡 **Nota de Segurança do Windows:** Como o executável é recente e de código aberto, o *Windows SmartScreen* pode exibir um aviso azul (*"O Windows protegeu o seu computador"*). Basta clicar em **"Mais informações"** e depois em **"Executar assim mesmo"**.
+> 💡 **Nota de Segurança:** Como o executável é recente e de código aberto, o *Windows SmartScreen* pode exibir o aviso azul (*"O Windows protegeu o seu computador"*). Basta clicar em **"Mais informações"** e depois em **"Executar assim mesmo"**.
 
 ---
 
@@ -49,10 +49,10 @@ Não precisa compilar nada para usar! Baixe os instaladores prontos diretamente 
 
 ### 📖 Visão Geral
 
-O **ScreenHoard** é um utilitário de produtividade desenvolvido em **Tauri v2** e **Rust** focado em desenvolvedores, analistas de sistemas e usuários avançados do Windows. Ele combina histórico unificado de clipboard com ferramentas essenciais de captura técnica em um único processo leve (~30 MB de RAM):
+O **ScreenHoard** é um utilitário de produtividade desenvolvido em **Tauri v2** e **Rust** focado em desenvolvedores, analistas de qualidade e usuários avançados do Windows. Ele combina histórico unificado de clipboard com ferramentas essenciais de captura técnica em um único processo leve (~30 MB de RAM):
 
-- 📋 **Histórico Total do Clipboard:** Armazenamento local de textos, links, imagens e cores em banco SQLite criptografado/local.
-- 🎬 **Gravador de Evidências em GIF (16 FPS):** Captura fluida por hardware Win32 com timer de 1ms e barra flutuante de controle (Pausar/Retomar).
+- 📋 **Histórico Total do Clipboard:** Armazenamento local de textos, links, imagens e cores em banco SQLite local.
+- 🎬 **Gravador de Evidências em GIF (16 FPS):** Captura fluida por hardware Win32 com timer de 1ms e barra flutuante de controle.
 - 🔍 **OCR Nativo e Offline:** Extração de texto em imagens via `Windows.Media.Ocr` do Windows 10/11, com tradução em 1 clique para 8 idiomas.
 - 📐 **Recorte de Imagem com Régua (Snip Tool):** Seleção retangular na tela com leitor de dimensões físicas em pixels (`{w} × {h} px`).
 - 🎨 **Conta-gotas com Lupa (Color Picker):** Leitura de pixels em tempo real a 60 FPS com lupa ampliada e cópia direta do código HEX.
@@ -73,3 +73,66 @@ O **ScreenHoard** é um utilitário de produtividade desenvolvido em **Tauri v2*
 ---
 
 ### 🏗️ Arquitetura Técnica
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   ScreenHoard Architecture                  │
+├───────────────────────────────┬─────────────────────────────┤
+│      Frontend (Webview2)      │        Backend (Rust)       │
+├───────────────────────────────┼─────────────────────────────┤
+│ • React 19 + TypeScript       │ • Tauri v2 Core             │
+│ • Tailwind CSS (Glassmorphism)│ • Hook Win32 (WH_MOUSE_LL)  │
+│ • Régua e Lupa Dinâmicas      │ • Win32 GDI / BitBlt 1:1    │
+│ • Suporte a 8 Idiomas         │ • Windows.Media.Ocr (WinRT) │
+│ • Navegação 100% via teclado  │ • Rusqlite (Bundled SQLite) │
+└───────────────────────────────┴─────────────────────────────┘
+```
+
+- **Persistência Local:** Banco SQLite em `%APPDATA%/ScreenHoard/database.db`.
+- **Armazenamento de Mídia:** Screenshots e GIFs em `%APPDATA%/ScreenHoard/media/`.
+
+---
+
+### 💻 Como Compilar o Código Fonte (Para Desenvolvedores)
+
+#### 1. Pré-requisitos
+- **Rust Toolchain:** `stable-x86_64-pc-windows-msvc`
+- **C++ Build Tools:** Carga de trabalho "Desenvolvimento para desktop com C++" do Visual Studio
+- **Node.js LTS:** Versão 18+ com `npm`
+
+#### 2. Executar localmente
+```bash
+git clone [https://github.com/cristianlohn/ScreenHoard.git](https://github.com/cristianlohn/ScreenHoard.git)
+cd ScreenHoard
+npm install
+npm run tauri dev
+```
+
+#### 3. Gerar instaladores (.exe e .msi)
+```bash
+npm run tauri build
+```
+
+---
+
+## 🇺🇸 English
+
+### 📖 Overview
+
+**ScreenHoard** is a lightweight, high-performance Windows productivity utility built with **Tauri v2** and **Rust**. It brings together local clipboard history, high-performance GIF evidence recording, native offline OCR, pixel-perfect screen snipping with dimensions ruler, and a 60 FPS magnifying color picker.
+
+### ⬇️ Download Pre-built Binaries
+
+You don't need to compile anything from source. Grab the latest `.exe` or `.msi` installers:
+
+👉 **[Download ScreenHoard Latest Release](https://github.com/cristianlohn/ScreenHoard/releases/latest)**
+
+---
+
+### 🤝 Contribuição & Licença
+
+Distribuído sob a licença [MIT](LICENSE).
+
+<p align="center">
+  Developed with ❤️ for Windows Power Users.
+</p>
