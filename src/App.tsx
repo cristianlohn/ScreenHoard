@@ -260,7 +260,7 @@ export const App: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 pb-2">
+            <div className="flex flex-col gap-2 pb-20">
               {filteredItems.map((item, index) => (
                 <div key={item.id} data-card-index={index}>
                   <ClipboardCard

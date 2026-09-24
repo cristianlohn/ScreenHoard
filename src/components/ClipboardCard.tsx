@@ -23,6 +23,7 @@ import {
   formatRelativeTime,
   formatFileSize,
 } from '@/utils/assets';
+import { cn } from '@/utils/cn';
 import { isCodeContent, isLinkContent } from '@/hooks/useClipboardHistory';
 import { translateText, SUPPORTED_LANGUAGES } from '@/services/translator';
 
@@ -55,6 +56,7 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(item.title || '');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const isContextMenuOpen = isMenuOpen;
 
   // Estados locais para a funcionalidade de tradução rápida
   const [isTranslating, setIsTranslating] = useState(false);
@@ -275,7 +277,8 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
     !showTranslation;
 
   return (
-    <article
+    <div
+      role="article"
       onClick={() => {
         if (!isEditingName && !isMenuOpen) {
           onCopy();
@@ -286,19 +289,17 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
         e.preventDefault();
         setIsMenuOpen(true);
       }}
-      className={`relative group rounded-xl select-none transition-all duration-150 glass-card ${
+      className={cn(
+        'group relative rounded-xl select-none transition-all duration-150 glass-card',
+        isMenuOpen || isContextMenuOpen || isLangDropdownOpen ? 'z-30' : 'z-0',
         isSelected
           ? 'glass-card-selected ring-1 ring-violet-400/60 shadow-lg shadow-violet-500/10'
-          : 'hover:border-white/20'
-      } ${
-        isCopying
-          ? 'ring-2 ring-emerald-400 bg-emerald-950/40 scale-[0.99] shadow-emerald-500/20'
-          : ''
-      } ${
+          : 'hover:border-white/20',
+        isCopying && 'ring-2 ring-emerald-400 bg-emerald-950/40 scale-[0.99] shadow-emerald-500/20',
         isPill
           ? 'p-2 flex items-center justify-between min-h-[42px]'
           : 'p-2.5 flex flex-col gap-2'
-      }`}
+      )}
     >
       {/* Visualização de Edição de Nome Inline */}
       {isEditingName ? (
@@ -812,7 +813,7 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
         <div
           ref={menuRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute right-2 top-8 z-30 w-36 rounded-lg glass-panel border border-white/15 shadow-xl py-1 text-xs text-zinc-200 animate-in fade-in zoom-in-95 duration-100"
+          className="absolute right-2 top-8 z-50 w-36 rounded-lg glass-panel border border-white/15 shadow-2xl py-1 text-xs text-zinc-200 animate-in fade-in zoom-in-95 duration-100"
         >
           <button
             onClick={() => {
@@ -899,6 +900,6 @@ export const ClipboardCard: React.FC<ClipboardCardProps> = ({
           </div>
         </div>
       )}
-    </article>
+    </div>
   );
 };
