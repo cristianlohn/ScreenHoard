@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use tauri::{AppHandle, Emitter, Manager};
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, GetKeyState, VK_CONTROL, VK_MENU,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW,
     TranslateMessage, UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT,
@@ -197,19 +200,22 @@ unsafe extern "system" fn keyboard_hook_proc(
                 }
             }
 
-            // Atalho global Ctrl+Shift+T para Captura Rápida de Texto (Snip OCR)
-            if vk == 0x54 { // Tecla 'T'
+            // Atalho global Ctrl+Alt+S para Recorte de Tela com Régua de Pixels (Snip)
+            let vk_code = vk;
+            if vk_code == 0x53 { // Tecla 'S' (0x53)
                 let ctrl_down = unsafe {
-                    (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
+                    ((GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0)
+                        || ((GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0)
                 };
-                let shift_down = unsafe {
-                    (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x10) as u16 & 0x8000) != 0
+                let alt_down = unsafe {
+                    ((GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0)
+                        || ((GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0)
                 };
-                if ctrl_down && shift_down {
+                if ctrl_down && alt_down {
                     if let Some(ctx) = HOOK_CONTEXT.get() {
                         let app = ctx.app_handle.clone();
                         std::thread::spawn(move || {
-                            let _ = crate::open_recorder_overlay_internal(&app, Some("snip".to_string()));
+                            open_recorder_overlay(app, Some("snip".to_string()));
                         });
                         return 1;
                     }
@@ -332,3 +338,9 @@ fn match_key_trigger(trigger: &str, vk: u32) -> bool {
         _ => false,
     }
 }
+
+/// Dispara a abertura do overlay de gravação ou recorte.
+fn open_recorder_overlay(app: AppHandle, mode: Option<String>) {
+    let _ = crate::open_recorder_overlay_internal(&app, mode);
+}
+

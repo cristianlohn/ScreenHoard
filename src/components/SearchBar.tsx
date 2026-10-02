@@ -176,7 +176,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                 }
               }}
               tabIndex={-1}
-              title="Recorte de Tela (Ctrl+Shift+T)"
+              title="Recorte com Régua de Pixels (Ctrl+Alt+S)"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               className="p-1 rounded-md border transition-all flex items-center justify-center bg-zinc-900/40 text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 hover:border-indigo-500/30 border-transparent cursor-pointer shrink-0"
             >

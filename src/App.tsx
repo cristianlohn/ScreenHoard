@@ -41,13 +41,13 @@ export const App: React.FC = () => {
     searchInputRef.current?.focus();
   }, []);
 
-  // Listener global de atalhos de janela (ex: Ctrl+, para alternar Configurações, Ctrl+Shift+T para Snip OCR)
+  // Listener global de atalhos de janela (ex: Ctrl+, para alternar Configurações, Ctrl+Alt+S para Recorte com Régua)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         setIsSettingsOpen(!isSettingsOpen);
-      } else if ((e.key === 'T' || e.key === 't') && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      } else if (e.ctrlKey && e.altKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         startOcrSnip();
       }
@@ -107,8 +107,8 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Atalho Ctrl+Shift+T para Captura Rápida de Texto (Snip OCR)
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+    // Atalho Ctrl+Alt+S para Recorte de Tela com Régua de Pixels (Snip)
+    if (e.ctrlKey && e.altKey && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
       startOcrSnip();
       return;

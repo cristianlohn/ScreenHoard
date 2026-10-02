@@ -65,7 +65,7 @@ O **ScreenHoard** é um utilitário de produtividade desenvolvido em **Tauri v2*
 | :--- | :--- | :--- |
 | `Mouse 5` (`XBUTTON2`) | **Alternar Janela** | Apresenta ou oculta o painel principal com foco automático na pesquisa |
 | `Mouse 4` (`XBUTTON1`) | **Captura Instantânea** | Guarda o ecrã completo localmente e copia a imagem para o clipboard |
-| `Ctrl + Shift + T` | **Recorte com Régua** | Seleção com marcador de dimensões em píxeis e cópia da imagem recortada |
+| `Ctrl + Alt + S` | **Recorte com Régua** | Seleção com marcador de dimensões em píxeis e cópia da imagem recortada |
 | `Ctrl + Shift + C` | **Conta-gotas (Lupa)** | Mira de precisão para copiar códigos de cor (#HEX) da área de trabalho |
 | `Ctrl + T` | **Spotlight Tradutor** | Painel de tradução direta entre 8 idiomas |
 | `Ctrl + ,` | **Configurações** | Janela de gestão de preferências, idioma e atalhos |
